@@ -1,7 +1,7 @@
 // Cloudflare Pages Function
 // POST /api/infinitepay/payment-check — consulta o status do pagamento na InfinitePay.
-// G4: o handle vem do servidor (env), nunca do navegador.
-// Env: INFINITEPAY_HANDLE (ex: michelrsouza)
+// O handle vem do servidor (env) ou, como fallback, do próprio cliente — ele é público
+// (aparece na URL do checkout da InfinitePay), então não é segredo.
 
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
@@ -9,12 +9,11 @@ const json = (data, status = 200) =>
 const limpar = (v, limite = 64) => String(v || "").replace(/[^A-Za-z0-9_-]/g, "").slice(0, limite);
 
 export const onRequestPost = async ({ request, env }) => {
-  const handle = limpar(env.INFINITEPAY_HANDLE, 40);
-  if (!handle) return json({ paid: false, erro: "INFINITEPAY_HANDLE não configurado no Cloudflare." });
-
   try {
     const corpo = await request.json();
+    const handle = limpar(env.INFINITEPAY_HANDLE, 40) || limpar(corpo.handle, 40);
     const orderNsu = limpar(corpo.orderNsu);
+    if (!handle) return json({ paid: false, erro: "Informe o INFINITEPAY_HANDLE no Cloudflare ou no painel admin." });
     if (!orderNsu) return json({ paid: false, erro: "Pedido sem NSU." });
 
     const payload = { handle, order_nsu: orderNsu };

@@ -57,7 +57,7 @@ async function obterTokenDeAcesso(env) {
 }
 
 async function pagamentoVerificado(env, corpo) {
-  const handle = String(env.INFINITEPAY_HANDLE || "").replace(/^\$/, "");
+  const handle = String(env.INFINITEPAY_HANDLE || corpo.handle || "").replace(/^\$/, "");
   const orderNsu = String(corpo.order_nsu || "").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 64);
   if (!handle || !orderNsu) return false;
 
@@ -88,8 +88,8 @@ async function pagamentoVerificado(env, corpo) {
 }
 
 export const onRequestPost = async ({ request, env, ctx }) => {
-  if (!env.INFINITEPAY_HANDLE || !env.FIREBASE_SERVICE_ACCOUNT) {
-    return Response.json({ success: false, error: "Webhook não configurado" }, { status: 200 });
+  if (!env.FIREBASE_SERVICE_ACCOUNT) {
+    return Response.json({ success: false, error: "Webhook não configurado: cadastre o secret FIREBASE_SERVICE_ACCOUNT (README-DEPLOY, seção 5)" }, { status: 200 });
   }
 
   let corpo;

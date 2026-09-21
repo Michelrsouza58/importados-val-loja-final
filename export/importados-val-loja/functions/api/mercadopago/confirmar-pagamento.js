@@ -1,6 +1,8 @@
 // Cloudflare Pages Function
 // POST /api/mercadopago/confirmar-pagamento — verifica no servidor se o pagamento MP foi aprovado.
-// Env: MP_ACCESS_TOKEN
+// Token: env MP_ACCESS_TOKEN OU o salvo na aba Pagamentos do painel admin (via chave de serviço).
+
+import { tokenMercadoPago } from "../../utils/firebase.js";
 
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
@@ -8,7 +10,12 @@ const json = (data, status = 200) =>
 const limpar = (v, limite = 64) => String(v || "").replace(/[^A-Za-z0-9_-]/g, "").slice(0, limite);
 
 export const onRequestPost = async ({ request, env }) => {
-  const token = env.MP_ACCESS_TOKEN || "";
+  let token;
+  try {
+    token = await tokenMercadoPago(env);
+  } catch {
+    token = "";
+  }
   if (!token) return json({ verificado: false, motivo: "sem-token" });
 
   try {

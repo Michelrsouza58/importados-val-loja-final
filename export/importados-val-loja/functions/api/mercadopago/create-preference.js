@@ -3,19 +3,18 @@
 // Cria a preferência de pagamento do Mercado Pago (Checkout Pro) no servidor,
 // para que o Access Token nunca fique exposto no navegador.
 //
-// Credenciais (Cloudflare > Settings > Variables and Secrets):
-//   MP_ACCESS_TOKEN  - token do Mercado Pago (produção: APP_USR-...)
-//   FIREBASE_DB_URL  - ex: https://importadosval-bbcec-default-rtdb.firebaseio.com
-//                      (usado como reserva para ler o token salvo no painel admin)
+// Token resolvido nesta ordem:
+//   1. env.MP_ACCESS_TOKEN (opcional)
+//   2. o token salvo na aba Pagamentos do painel admin (lido com a chave de serviço)
+
+import { tokenMercadoPago, DB_PADRAO } from "../../utils/firebase.js";
 
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
 
-async function tokenDoFirebase(env) {
-  const dbUrl = env.FIREBASE_DB_URL;
-  if (!dbUrl) return "";
+async function tokenDoFirebaseAnonimo(env) {
   try {
-    const resposta = await fetch(`${dbUrl.replace(/\/$/, "")}/configuracoes/pagamentos.json`, {
+    const resposta = await fetch(`${(env.FIREBASE_DB_URL || DB_PADRAO).replace(/\/$/, "")}/configuracoes/pagamentos.json`, {
       signal: AbortSignal.timeout(8000),
     });
     if (!resposta.ok) return "";
@@ -38,10 +37,11 @@ export const onRequestPost = async ({ request, env }) => {
       }
     }
 
-    const token = (env.MP_ACCESS_TOKEN || "") || (await tokenDoFirebase(env));
+    let token = await tokenMercadoPago(env);
+    if (!token) token = await tokenDoFirebaseAnonimo(env);
     if (!token) {
       return json(
-        { error: "O Mercado Pago ainda não foi configurado. Defina a variável MP_ACCESS_TOKEN no Cloudflare ou o token na aba Pagamentos do painel admin." },
+        { error: "O Mercado Pago ainda não foi configurado. Salve o Access Token na aba Pagamentos do painel admin (ou na variável MP_ACCESS_TOKEN)." },
         400
       );
     }

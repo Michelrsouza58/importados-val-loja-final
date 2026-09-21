@@ -6,7 +6,7 @@ import { db, auth } from "../lib/firebase";
 import { ref, runTransaction, set, push, update } from "firebase/database";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { useConfiguracoes } from "../lib/configuracoes";
+import { useConfiguracoes, listaAdmins } from "../lib/configuracoes";
 import { buscarCupom, registrarUsoCupom, calcularDescontoCupom } from "../lib/cupons";
 import { brl } from "../lib/formato";
 import apiBase from "../lib/apiBase";
@@ -164,6 +164,7 @@ export default function CarrinhoGaveta() {
           tipo: pronta.length > 0 ? "pedido" : "encomenda",
           numero: nsu,
           clienteEmail: usuario.email,
+          admins: listaAdmins(config),
           itens: itensAjustados,
           total: valorTotalAjustado,
           cupom: cupomAplicado ? cupomAplicado.Codigo : "",

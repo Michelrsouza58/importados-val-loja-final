@@ -53,13 +53,28 @@ O site cria o link de checkout e o cliente paga no app do banco. Se quiser usar
 seu fluxo do n8n, cole a URL do webhook no campo indicado.
 
 **Cartão — Mercado Pago (Checkout Pro):** o cliente é levado ao checkout
-seguro do Mercado Pago. Configure a variável secreta no Cloudflare:
+seguro do Mercado Pago. O token vem da aba Pagamentos do painel admin —
+você só precisa cadastrar **um único secret** no Cloudflare:
 
-- Cloudflare > seu projeto Pages > Settings > Variables and Secrets:
-  - `MP_ACCESS_TOKEN` = seu token (produção: `APP_USR-...`, teste: `TEST-...`)
-  - `FIREBASE_DB_URL` = `https://importadosval-bbcec-default-rtdb.firebaseio.com`
-- Token também pode ser salvo na aba Pagamentos do painel admin (a função
-  serverless lê dele se a variável não existir — prefira a variável secreta).
+- Cloudflare > **Workers & Pages** > abra seu projeto > **Settings** >
+  **Variables and Secrets** > **Add**:
+  - Tipo: **Secret** — Nome: `FIREBASE_SERVICE_ACCOUNT`
+  - Valor: o conteúdo inteiro do JSON gerado em Firebase Console >
+    Project Settings (engrenagem) > **Service accounts** > **Generate new
+    private key**
+  - Importante: salve para o ambiente **Production** (e de preferência também
+    em Preview).
+- Essa chave permite que as funções do site leiam o token do Mercado Pago e os
+  e-mails administradores direto do seu painel admin — nada mais para configurar.
+- Opcional: `MP_ACCESS_TOKEN` (fixa o token por fora), `INFINITEPAY_HANDLE`,
+  `ADMIN_EMAILS`, `FIREBASE_DB_URL` — todos têm padrão ou vêm do painel.
+
+> Sobre "site estático não aceita variáveis": o site em si não usa variáveis
+> mesmo — quem usa são as **funções serverless** que acompanham o deploy na
+> pasta `functions/`. Elas aparecem automaticamente quando o projeto é criado
+> pelo GitHub, e as variáveis/secrets ficam em Settings > Variables and Secrets.
+> Se você subiu o site por upload direto de arquivos, reconecte pelo GitHub
+> (passo 1) para as funções existirem.
 
 Para testar antes de ir para produção, use o token de TESTE do Mercado Pago e
 os cartões de teste oficiais (Mastercard 5031 4332 1540 6351, CVV 123, validade
@@ -71,11 +86,10 @@ Para o pedido virar "Pago" sozinho quando o Pix cair, use a função que já vai
 no repositório (nada de worker separado):
 
 1. Cloudflare > seu projeto Pages > Settings > Variables and Secrets (Encrypt):
-   - `INFINITEPAY_HANDLE` = sua @handle (ex: `michelrsouza`)
-   - `FIREBASE_DB_URL` = `https://importadosval-bbcec-default-rtdb.firebaseio.com`
-   - `FIREBASE_SERVICE_ACCOUNT` = conteúdo inteiro do JSON da chave de serviço.
-     Pegue em Firebase Console > Project Settings (engrenagem) > Service accounts
-     > **Generate new private key** (baixa um JSON — cole o conteúdo todo).
+   - `FIREBASE_SERVICE_ACCOUNT` = conteúdo inteiro do JSON da chave de serviço
+     (mesmo secret da seção do Mercado Pago — só ele é obrigatório).
+   - `INFINITEPAY_HANDLE` (opcional): sua @handle — se não existir, o webhook
+     aceita a handle que a própria InfinitePay envia no corpo.
 2. No app da InfinitePay, cadastre a URL do webhook:
    `https://SEU-SITE.pages.dev/api/webhooks/infinitepay`
 3. Pronto: o webhook confere o pagamento, acha o pedido certo (pronta entrega
