@@ -245,36 +245,91 @@ export default function CarrinhoGaveta() {
       const compra = await registrarPedidos("Mercado Pago");
       if (!compra) return;
 
-      const resposta = await fetch(`${apiBase}/api/mercadopago/create-preference`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items: compra.itensAjustados.map((i) => ({
-            title: (i.Variante ? `${i.Nome} - ${i.Variante}` : i.Nome).toUpperCase(),
-            quantity: i.Quantidade,
-            unit_price: Number(i.PrecoReal),
-          })),
-          payerEmail: (auth.currentUser && auth.currentUser.email) || "",
-          origin: window.location.origin,
-          orderNsu: compra.nsu,
-        }),
-      });
-      const dados = await resposta.json();
-      if (!resposta.ok || !dados.initPoint) {
-        throw new Error(dados.error || "Falha ao iniciar pagamento");
+      let caiuParaInfinitePay = false;
+      try {
+        const resposta = await fetch(`${apiBase}/api/mercadopago/create-preference`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            items: compra.itensAjustados.map((i) => ({
+              title: (i.Variante ? `${i.Nome} - ${i.Variante}` : i.Nome).toUpperCase(),
+              quantity: i.Quantidade,
+              unit_price: Number(i.PrecoReal),
+            })),
+            payerEmail: (auth.currentUser && auth.currentUser.email) || "",
+            origin: window.location.origin,
+            orderNsu: compra.nsu,
+          }),
+        });
+        const dados = await resposta.json();
+        if (!resposta.ok || !dados.initPoint) {
+          throw new Error(dados.error || "Falha ao iniciar pagamento");
+        }
+
+        // Liga o pagamento MP aos registros do pedido (para confirmar o status depois)
+        try {
+          const idsMP = { orderNsu: compra.nsu, salvoEm: Date.now() };
+          if (compra.pedidoKey) await update(ref(db, `pedidos/${compra.pedidoKey}`), { PagamentoMercadoPago: idsMP });
+          if (compra.encomendaPath) await update(ref(db, compra.encomendaPath), { PagamentoMercadoPago: idsMP });
+        } catch (e) {}
+
+        itensAtivos.forEach((i) => removerDoCarrinho(i));
+        await registrarUsoCupom(cupomAplicado ? cupomAplicado.Key : null);
+        setCarrinhoAberto(false);
+        window.location.assign(dados.initPoint);
+        return;
+      } catch (erroMP) {
+        const mensagem = String(erroMP.message || "");
+        const semConfiguracao = mensagem.includes("não foi configurado") || mensagem.includes("sem-token");
+        if (!semConfiguracao) {
+          toast.error(mensagem || "Não foi possível iniciar o pagamento com cartão.");
+          return;
+        }
+        caiuParaInfinitePay = true;
+        // Mercado Pago ainda não configurado: o checkout da InfinitePay também aceita cartão
+        try {
+          const correcao = { MetodoPagamento: "Cartão — InfinitePay" };
+          if (compra.pedidoKey) await update(ref(db, `pedidos/${compra.pedidoKey}`), correcao);
+          if (compra.encomendaPath) await update(ref(db, compra.encomendaPath), correcao);
+        } catch (e) {}
+        toast.info("Mercado Pago ainda não configurado — seguindo com cartão via InfinitePay.");
       }
 
-      // Liga o pagamento MP aos registros do pedido (para confirmar o status depois)
-      try {
-        const idsMP = { orderNsu: compra.nsu, salvoEm: Date.now() };
-        if (compra.pedidoKey) await update(ref(db, `pedidos/${compra.pedidoKey}`), { PagamentoMercadoPago: idsMP });
-        if (compra.encomendaPath) await update(ref(db, compra.encomendaPath), { PagamentoMercadoPago: idsMP });
-      } catch (e) {}
+      const nomeItem = (i) => (i.Variante ? `${i.Nome} - ${i.Variante}` : i.Nome).toUpperCase();
+      const items = compra.itensAjustados.map((i) => ({
+        name: nomeItem(i),
+        description: nomeItem(i),
+        price: Math.round(i.PrecoReal * (1 - descontoPix / 100) * 100),
+        quantity: i.Quantidade,
+      }));
+      const handle = config.pagamentos.infinitepayHandle || "michelrsouza";
+      const webhookN8n = config.pagamentos.infinitepayWebhookN8n;
+
+      let url = null;
+      if (webhookN8n) {
+        const resposta = await fetch(webhookN8n, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ handle, redirect_url: window.location.origin + "/meus-pedidos", order_nsu: compra.nsu, items }),
+        });
+        const dados = await resposta.json();
+        url = (dados && (dados.url || (dados.body && dados.body.url) || (dados.data && dados.data.url))) || null;
+      } else {
+        const resposta = await fetch(API_INFINITEPAY, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ handle, redirect_url: window.location.origin + "/meus-pedidos", order_nsu: compra.nsu, items }),
+        });
+        if (!resposta.ok) throw new Error("InfinitePay recusou o checkout");
+        const dados = await resposta.json();
+        url = dados.url || dados.checkout_url || null;
+      }
+      if (!url) throw new Error("Sem URL de checkout");
 
       itensAtivos.forEach((i) => removerDoCarrinho(i));
       await registrarUsoCupom(cupomAplicado ? cupomAplicado.Key : null);
       setCarrinhoAberto(false);
-      window.location.assign(dados.initPoint);
+      window.location.href = url;
     } catch (erro) {
       toast.error(erro.message || "Não foi possível iniciar o pagamento com cartão.");
     } finally {

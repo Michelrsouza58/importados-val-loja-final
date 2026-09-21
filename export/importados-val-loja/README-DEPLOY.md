@@ -11,7 +11,28 @@ Loja redesignada em nível premium: home cinematográfica, catálogo com variant
 3. Build command: `npm run build` — Output directory: `dist`.
 4. (A cada `git push` o site atualiza sozinho.)
 
-## 2. Configurar o Firebase (importante!)
+## 2. "As variáveis aparecem bloqueadas?" — leia aqui
+
+Onde ficam ( painel atual da Cloudflare ):
+
+1. **Workers & Pages** > clique no **NOME do seu projeto** (na lista, não dentro
+   de um deploy específico — a tela de um deploy é só leitura).
+2. Aba **Settings** > role até **Variables and Secrets** > **Add**.
+3. Tipo: **Secret** · Ambiente: **Production** (depois repita em **Preview**).
+
+Se mesmo assim o botão estiver travado, cadastre o secret pelo terminal
+(uma linha, ele pede o valor para colar):
+
+```bash
+npx wrangler pages secret put FIREBASE_SERVICE_ACCOUNT --project-name=NOME-DO-SEU-PROJETO
+```
+
+E enquanto o secret não estiver no ar, a loja continua vendendo sem travar:
+- **Pix** segue direto pela InfinitePay (confirmação ao retornar + webhook quando ativar);
+- **Cartão** cai automaticamente para o checkout da InfinitePay (que também aceita
+  cartão) até o token do Mercado Pago ficar disponível.
+
+## 3. Configurar o Firebase (importante!)
 
 O Realtime Database atual está **negando leitura** — por isso o catálogo não
 carrega. Em Firebase Console > Realtime Database > Rules, cole:
@@ -33,7 +54,7 @@ carrega. Em Firebase Console > Realtime Database > Rules, cole:
 Depois, em **Authentication > Settings > Authorized domains**, adicione o
 domínio do Cloudflare (ex: `importados-val.pages.dev`) e seu domínio próprio.
 
-## 3. Painel Admin
+## 4. Painel Admin
 
 Acesse `seusite.com/admin` e entre com o e-mail liberado
 (michelrobertoeletro@gmail.com já vem como dona da loja) e a senha criada no
@@ -46,7 +67,7 @@ Firebase Authentication.
 - **Pagamentos**: handle da InfinitePay, webhook do n8n (opcional) e token do Mercado Pago.
 - **Administradores**: adicionar/remover e-mails de acesso.
 
-## 4. Pagamentos
+## 5. Pagamentos
 
 **Pix — InfinitePay (direto):** só precisa da sua @handle na aba Pagamentos.
 O site cria o link de checkout e o cliente paga no app do banco. Se quiser usar
@@ -80,7 +101,7 @@ Para testar antes de ir para produção, use o token de TESTE do Mercado Pago e
 os cartões de teste oficiais (Mastercard 5031 4332 1540 6351, CVV 123, validade
 11/30, titular APRO, CPF 12345678909).
 
-## 5. Webhook da InfinitePay — status "Pago" automático
+## 6. Webhook da InfinitePay — status "Pago" automático
 
 Para o pedido virar "Pago" sozinho quando o Pix cair, use a função que já vai
 no repositório (nada de worker separado):
@@ -100,7 +121,7 @@ Se preferir manter o worker separado em workers.dev, use o arquivo
 Firebase exige autenticação para escrever, o caminho pedidos/{nsu} não existe —
 o NSU fica dentro do registro — e os campos são com maiúsculas).
 
-## 6. Estrutura
+## 7. Estrutura
 
 - `src/` — site (React + Tailwind + Firebase)
 - `functions/` — Cloudflare Pages Functions (servidor do Mercado Pago)
