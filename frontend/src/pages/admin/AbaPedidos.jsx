@@ -4,7 +4,7 @@ import { db } from "../../lib/firebase";
 import { ref, onValue, update } from "firebase/database";
 import { toast } from "sonner";
 import { brl } from "../../lib/formato";
-import { FiShoppingBag, FiBox } from "react-icons/fi";
+import { FiShoppingBag, FiBox, FiMinus, FiPlus, FiTrash2 } from "react-icons/fi";
 
 const STATUS = ["Aguardando Pagamento", "Pago", "Enviado", "Entregue", "Cancelado"];
 
@@ -65,14 +65,45 @@ export default function AbaPedidos() {
     }
   };
 
+  const salvarItens = async (tipo, item, novosItens) => {
+    const valorTotal = Math.round(novosItens.reduce((s, i) => s + Number(i.PrecoReal) * Number(i.Quantidade || 0), 0) * 100) / 100;
+    try {
+      const rota = tipo === "pedidos" ? `pedidos/${item.FirebaseKey}` : `encomendas/${item.UsuarioId}/${item.FirebaseKey}`;
+      await update(ref(db, rota), { Itens: novosItens, ValorTotal: valorTotal });
+    } catch (erro) {
+      toast.error("Falha ao editar o pedido. Verifique as regras de escrita do Firebase.");
+    }
+  };
+
+  const mudarQuantidade = (tipo, item, idx, delta) => {
+    const itens = (item.Itens || []).map((it, i) =>
+      i === idx ? { ...it, Quantidade: Math.max(1, Number(it.Quantidade || 1) + delta) } : it
+    );
+    salvarItens(tipo, item, itens);
+  };
+
+  const removerItem = (tipo, item, idx) => {
+    const itens = (item.Itens || []).filter((_, i) => i !== idx);
+    if (itens.length === 0) {
+      toast.error("O pedido precisa de pelo menos um item — cancele o pedido se necessário.");
+      return;
+    }
+    salvarItens(tipo, item, itens);
+  };
+
   const lista = aba === "pedidos" ? pedidos : encomendas;
 
   return (
     <div data-testid="admin-aba-pedidos">
       <div className="flex items-center justify-between mb-6">
-        <h2 className="font-display text-xl font-bold text-espresso">
-          {aba === "pedidos" ? `Pronta Entrega (${pedidos.length})` : `Encomendas (${encomendas.length})`}
-        </h2>
+        <div>
+          <h2 className="font-display text-xl font-bold text-espresso">
+            {aba === "pedidos" ? `Pronta Entrega (${pedidos.length})` : `Encomendas (${encomendas.length})`}
+          </h2>
+          <p className="text-[11px] text-espresso/50 mt-1">
+            Ajuste quantidades e remova itens direto daqui — o total é recalculado sozinho.
+          </p>
+        </div>
         <div className="flex bg-white border border-pessego/20 p-1 rounded-xl">
           {[
             { chave: "pedidos", rotulo: "Pronta Entrega", icone: FiShoppingBag },
@@ -128,21 +159,33 @@ export default function AbaPedidos() {
                 </select>
               </div>
 
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 {(item.Itens || []).map((i, idx) => (
-                  <div key={idx} className="flex justify-between text-[11px] text-espresso/60">
-                    <span className="truncate">
+                  <div key={idx} className="flex items-center justify-between gap-3 text-[11px]" data-testid={`admin-pedido-item-${item.FirebaseKey}-${idx}`}>
+                    <span className="truncate text-espresso/70 flex-1 min-w-0">
+                      <strong className="font-mono text-espresso/40">#{idx + 1}</strong>{" "}
                       <strong className="font-mono">{i.Quantidade}x</strong> {i.Nome}
                       {i.Variante ? ` · ${i.Variante}` : ""}
                     </span>
-                    <span className="font-mono text-espresso/40">{brl(Number(i.PrecoReal) * Number(i.Quantidade || 1))}</span>
+                    <span className="font-mono text-espresso/40 shrink-0">{brl(Number(i.PrecoReal) * Number(i.Quantidade || 1))}</span>
+                    <span className="flex items-center gap-1 shrink-0">
+                      <button onClick={() => mudarQuantidade(aba, item, idx, -1)} className="p-1.5 rounded-lg border border-espresso/10 text-espresso/50 hover:text-rose hover:border-rose/40" aria-label="Diminuir quantidade" data-testid={`admin-pedido-item-diminuir-${item.FirebaseKey}-${idx}`}>
+                        <FiMinus size={10} />
+                      </button>
+                      <button onClick={() => mudarQuantidade(aba, item, idx, 1)} className="p-1.5 rounded-lg border border-espresso/10 text-espresso/50 hover:text-rose hover:border-rose/40" aria-label="Aumentar quantidade" data-testid={`admin-pedido-item-aumentar-${item.FirebaseKey}-${idx}`}>
+                        <FiPlus size={10} />
+                      </button>
+                      <button onClick={() => removerItem(aba, item, idx)} className="p-1.5 rounded-lg border border-rose/20 text-rose hover:bg-rose/5" aria-label="Remover item" data-testid={`admin-pedido-item-remover-${item.FirebaseKey}-${idx}`}>
+                        <FiTrash2 size={10} />
+                      </button>
+                    </span>
                   </div>
                 ))}
               </div>
 
               <div className="flex justify-between items-center pt-3 mt-3 border-t border-espresso/5">
                 <span className="text-[9px] uppercase tracking-widest text-espresso/40">{item.MetodoPagamento || "—"}</span>
-                <span className="text-sm font-display font-black text-rose">{brl(item.ValorTotal || 0)}</span>
+                <span className="text-sm font-display font-black text-rose" data-testid={`admin-pedido-total-${item.FirebaseKey}`}>{brl(item.ValorTotal || 0)}</span>
               </div>
               {item.Cupom && (
                 <div className="flex justify-between items-center text-[10px] text-emerald-700 pt-1" data-testid={`admin-pedido-cupom-${item.FirebaseKey}`}>

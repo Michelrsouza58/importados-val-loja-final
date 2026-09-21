@@ -21,8 +21,9 @@ Cliente já tinha um site de vendas 100% front-end (Vite + React + Firebase RTDB
 - Códigos de produto automáticos IV000001+ (contador configuracoes/ultimoCodigoProduto via runTransaction).
 - Menu mobile corrigido: gaveta esquerda com fundo sólido renderizada FORA da navbar (o backdrop-blur da navbar criava containing block e espremia o menu fixo em 63px — causa do "fundo transparente" reportado).
 - Login/cadastro de cliente + Meus Pedidos (pagar novamente, cancelar).
-- Painel Admin (/admin): login Firebase, gate por lista de admins (dona michelrobertoeletro@gmail.com fixa), abas Produtos (CRUD + variantes + upload Storage), Pedidos (status + cupom), Cupons, Financeiro (taxas 1–12x, desconto Pix, máx. parcelas), Pagamentos (handle InfinitePay, webhook n8n, token/public key MP), Administradores (add/remove).
-- Export Cloudflare: projeto Vite equivalente + Pages Function do Mercado Pago + README-DEPLOY (regras do RTDB, domínios autorizados, variáveis de segredo).
+- Painel Admin (/admin): login Firebase, gate por lista de admins (dona michelrobertoeletro@gmail.com fixa), abas Produtos (CRUD + variantes + upload Storage), Vitrine (escolha do produto da foto de abertura + destaques "Amados e requisitados"), Pedidos (status + cupom + edição de itens com recálculo do total), Cupons, Financeiro (taxas 1–12x, desconto Pix, máx. parcelas), Pagamentos (handle InfinitePay, webhook n8n, token/public key MP), Administradores (add/remove).
+- E-mails automáticos: todo pedido/encomenda dispara notificação para os e-mails administradores (via endpoint /api/emails/pedido, destinatários vindos do servidor: ADMIN_EMAILS + painel de admins; template fixo com dados escapados; função equivalente no Cloudflare functions/api/emails/pedido.js). Teste real enviado com sucesso para michelrobertoeletro@gmail.com.
+- Export Cloudflare: projeto Vite equivalente + Pages Functions (Mercado Pago + e-mails) + README-DEPLOY (regras do RTDB, domínios autorizados, variáveis de segredo).
 
 ## Pendências / Backlog
 - P0: cliente aplicar as regras do RTDB e publicar (README-DEPLOY); adicionar domínio do Cloudflare nos domínios autorizados do Firebase Auth.

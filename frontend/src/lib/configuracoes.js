@@ -22,6 +22,7 @@ export const CONFIG_PADRAO = {
     mercadoPagoPublicKey: "",
   },
   admins: [],
+  vitrine: { heroKey: "", destaques: [] },
 };
 
 function mesclarConfig(dados) {
@@ -34,6 +35,7 @@ function mesclarConfig(dados) {
     },
     pagamentos: { ...CONFIG_PADRAO.pagamentos, ...(d.pagamentos || {}) },
     admins: Array.isArray(d.admins) ? d.admins : (d.admins ? Object.values(d.admins) : []),
+    vitrine: { ...CONFIG_PADRAO.vitrine, ...(d.vitrine || {}) },
   };
 }
 

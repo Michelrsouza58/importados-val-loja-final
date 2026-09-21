@@ -1,8 +1,9 @@
 // src/pages/Home.jsx
-import React, { useRef } from "react";
+import React, { useMemo, useRef } from "react";
 import { Link } from "react-router-dom";
 import { motion, useScroll, useTransform, useMotionValue, useSpring } from "framer-motion";
 import { useProdutos, precoEfetivo } from "../lib/produtos";
+import { useConfiguracoes } from "../lib/configuracoes";
 import { brl } from "../lib/formato";
 import { Reveal, LinhaReveal } from "../components/Reveal";
 import Marquee from "../components/Marquee";
@@ -13,6 +14,23 @@ const FOTO_HERO =
 
 export default function Home() {
   const { produtos } = useProdutos();
+  const { config } = useConfiguracoes();
+  const vitrine = config.vitrine || { heroKey: "", destaques: [] };
+
+  const fotoHero = useMemo(() => {
+    const escolhido = produtos.find((p) => p.FirebaseKey === vitrine.heroKey);
+    if (!escolhido) return FOTO_HERO;
+    return escolhido.FotoUrl || (escolhido.Variantes[0] && escolhido.Variantes[0].FotoUrl) || FOTO_HERO;
+  }, [produtos, vitrine.heroKey]);
+
+  const destaques = useMemo(() => {
+    if (!vitrine.destaques || vitrine.destaques.length === 0) return produtos.slice(0, 4);
+    const escolhidos = vitrine.destaques
+      .map((chave) => produtos.find((p) => p.FirebaseKey === chave))
+      .filter(Boolean);
+    return escolhidos.length > 0 ? escolhidos.slice(0, 4) : produtos.slice(0, 4);
+  }, [produtos, vitrine.destaques]);
+
   const secaoHero = useRef(null);
   const scrollY = useScroll();
   const parallaxY = useTransform(scrollY.scrollY, [0, 600], [0, 60]);
@@ -27,8 +45,6 @@ export default function Home() {
     mouseX.set((e.clientX - rect.left) / rect.width - 0.5);
     mouseY.set((e.clientY - rect.top) / rect.height - 0.5);
   };
-
-  const destaques = produtos.slice(0, 4);
 
   return (
     <div>
@@ -101,7 +117,7 @@ export default function Home() {
             <motion.div style={{ y: parallaxY, rotateX, rotateY, transformStyle: "preserve-3d" }} className="relative">
               <div className="absolute inset-0 bg-gradient-to-tr from-rose/30 via-pessego/20 to-transparent blur-2xl rounded-full scale-110" />
               <div className="relative rounded-t-[999px] rounded-b-[2rem] overflow-hidden border border-pessego/40 shadow-2xl aspect-[4/5] bg-creme" data-testid="hero-imagem-quadro">
-                <img src={FOTO_HERO} alt="Perfume importado em destaque" className="w-full h-full object-cover" />
+                <img src={fotoHero} alt="Produto em destaque escolhido pela Val" className="w-full h-full object-cover" data-testid="hero-imagem" />
               </div>
 
               <motion.div
