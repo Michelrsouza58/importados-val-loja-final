@@ -3,7 +3,7 @@ import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useCarrinho } from "../context/CarrinhoContext";
 import { db, auth } from "../lib/firebase";
-import { ref, runTransaction, set, push } from "firebase/database";
+import { ref, runTransaction, set, push, update } from "firebase/database";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useConfiguracoes } from "../lib/configuracoes";
@@ -110,13 +110,16 @@ export default function CarrinhoGaveta() {
     const encomenda = itensAtivos.filter((i) => Number(i.QuantidadeEstoque) <= 0);
 
     let nsu = `ENC${Date.now().toString().substring(8)}`;
+    let pedidoCriadoKey = null;
+    let encomendaCriadaPath = null;
     try {
       if (pronta.length > 0) {
         const contadorRef = ref(db, "configuracoes/ultimoPedidoId");
         const resultado = await runTransaction(contadorRef, (atual) => (atual === null ? 1 : atual + 1));
         const idLimpo = String(resultado.snapshot.val()).padStart(7, "0");
         nsu = idLimpo;
-        await set(push(ref(db, "pedidos")), {
+        const pedidoRef = push(ref(db, "pedidos"));
+        await set(pedidoRef, {
           NumeroPedido: `#${idLimpo}`,
           NumeroPedidoLimpo: idLimpo,
           UsuarioId: usuario.uid,
@@ -130,6 +133,7 @@ export default function CarrinhoGaveta() {
           HoraPedido: new Date().toLocaleTimeString("pt-BR"),
           Status: "Aguardando Pagamento",
         });
+        pedidoCriadoKey = pedidoRef.key;
       }
       if (encomenda.length > 0) {
         const loteRef = push(ref(db, `encomendas/${usuario.uid}`));
@@ -145,6 +149,7 @@ export default function CarrinhoGaveta() {
           Itens: itensDe(encomenda),
         });
         nsu = (loteRef.key || nsu).replace(/[^a-zA-Z0-9]/g, "");
+        encomendaCriadaPath = `encomendas/${usuario.uid}/${loteRef.key}`;
       }
     } catch (erro) {
       toast.error("Falha ao registrar o pedido. Verifique sua conexão e tente novamente.");
@@ -167,7 +172,7 @@ export default function CarrinhoGaveta() {
       }).catch(() => {});
     } catch (e) {}
 
-    return { nsu, itensAjustados, valorTotalAjustado };
+    return { nsu, itensAjustados, valorTotalAjustado, pedidoKey: pedidoCriadoKey, encomendaPath: encomendaCriadaPath };
   };
 
   const pagarPix = async () => {
@@ -205,6 +210,19 @@ export default function CarrinhoGaveta() {
         if (!resposta.ok) throw new Error("InfinitePay recusou o checkout");
         const dados = await resposta.json();
         url = dados.url || dados.checkout_url || null;
+        // Guarda os identificadores do pagamento no pedido para confirmar depois
+        if (url) {
+          try {
+            const ids = {
+              order_nsu: compra.nsu,
+              slug: dados.slug || dados.invoice_slug || "",
+              transaction_nsu: dados.transaction_nsu || "",
+              salvoEm: Date.now(),
+            };
+            if (compra.pedidoKey) await update(ref(db, `pedidos/${compra.pedidoKey}`), { PagamentoInfinitePay: ids });
+            if (compra.encomendaPath) await update(ref(db, compra.encomendaPath), { PagamentoInfinitePay: ids });
+          } catch (e) {}
+        }
       }
 
       if (!url) throw new Error("Sem URL de checkout");
@@ -244,6 +262,13 @@ export default function CarrinhoGaveta() {
       if (!resposta.ok || !dados.initPoint) {
         throw new Error(dados.error || "Falha ao iniciar pagamento");
       }
+
+      // Liga o pagamento MP aos registros do pedido (para confirmar o status depois)
+      try {
+        const idsMP = { orderNsu: compra.nsu, salvoEm: Date.now() };
+        if (compra.pedidoKey) await update(ref(db, `pedidos/${compra.pedidoKey}`), { PagamentoMercadoPago: idsMP });
+        if (compra.encomendaPath) await update(ref(db, compra.encomendaPath), { PagamentoMercadoPago: idsMP });
+      } catch (e) {}
 
       itensAtivos.forEach((i) => removerDoCarrinho(i));
       await registrarUsoCupom(cupomAplicado ? cupomAplicado.Key : null);

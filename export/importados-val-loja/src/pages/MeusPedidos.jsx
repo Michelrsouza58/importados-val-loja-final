@@ -1,7 +1,8 @@
 // src/pages/MeusPedidos.jsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { db, auth } from "../lib/firebase";
-import { ref, onValue, update } from "firebase/database";
+import { ref, onValue, update, get } from "firebase/database";
+import apiBase from "../lib/apiBase";
 import { onAuthStateChanged } from "firebase/auth";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -83,6 +84,183 @@ export default function MeusPedidos() {
     };
   }, [usuario]);
 
+  // ─── CONFIRMAÇÃO AUTOMÁTICA DE PAGAMENTOS ───
+  const marcarPagoRef = useRef(null);
+
+  const marcarPago = async (nsuBruto) => {
+    const limpo = String(nsuBruto || "").replace(/[^a-zA-Z0-9]/g, "");
+    if (!limpo || !usuario) return false;
+    const idDoRegistro = (registro, chave) =>
+      String(
+        (registro.PagamentoInfinitePay && registro.PagamentoInfinitePay.order_nsu) ||
+          (registro.PagamentoMercadoPago && registro.PagamentoMercadoPago.orderNsu) ||
+          registro.NumeroPedidoLimpo ||
+          chave
+      ).replace(/[^a-zA-Z0-9]/g, "");
+    try {
+      let mudou = false;
+      const snapPedidos = await get(ref(db, "pedidos"));
+      if (snapPedidos.exists()) {
+        for (const [chave, registro] of Object.entries(snapPedidos.val())) {
+          if (
+            registro &&
+            registro.UsuarioId === usuario.uid &&
+            (registro.Status || "") === "Aguardando Pagamento" &&
+            idDoRegistro(registro, chave) === limpo
+          ) {
+            await update(ref(db, `pedidos/${chave}`), { Status: "Pago", PagoEm: new Date().toLocaleString("pt-BR") });
+            mudou = true;
+          }
+        }
+      }
+      const snapEncomendas = await get(ref(db, `encomendas/${usuario.uid}`));
+      if (snapEncomendas.exists()) {
+        for (const [chave, registro] of Object.entries(snapEncomendas.val())) {
+          if (registro && (registro.Status || "") === "Aguardando Pagamento" && idDoRegistro(registro, chave) === limpo) {
+            await update(ref(db, `encomendas/${usuario.uid}/${chave}`), {
+              Status: "Pago",
+              PagoEm: new Date().toLocaleString("pt-BR"),
+            });
+            mudou = true;
+          }
+        }
+      }
+      return mudou;
+    } catch (erro) {
+      return false;
+    }
+  };
+  marcarPagoRef.current = marcarPago;
+
+  const salvarIdentificadores = async (nsuBruto, slug, transactionNsu) => {
+    const limpo = String(nsuBruto || "").replace(/[^a-zA-Z0-9]/g, "");
+    if (!limpo || !usuario) return;
+    const atualizar = async (rota, registro) => {
+      const atual = registro.PagamentoInfinitePay || {};
+      await update(ref(db, rota), {
+        PagamentoInfinitePay: { order_nsu: limpo, slug: slug || atual.slug || "", transaction_nsu: transactionNsu || atual.transaction_nsu || "" },
+      });
+    };
+    try {
+      const snapPedidos = await get(ref(db, "pedidos"));
+      if (snapPedidos.exists()) {
+        for (const [chave, registro] of Object.entries(snapPedidos.val())) {
+          if (registro && registro.UsuarioId === usuario.uid) {
+            const id = String(registro.PagamentoInfinitePay?.order_nsu || registro.NumeroPedidoLimpo || chave).replace(/[^a-zA-Z0-9]/g, "");
+            if (id === limpo) await atualizar(`pedidos/${chave}`, registro);
+          }
+        }
+      }
+      const snapEncomendas = await get(ref(db, `encomendas/${usuario.uid}`));
+      if (snapEncomendas.exists()) {
+        for (const [chave, registro] of Object.entries(snapEncomendas.val())) {
+          if (registro) {
+            const id = String(registro.PagamentoInfinitePay?.order_nsu || chave).replace(/[^a-zA-Z0-9]/g, "");
+            if (id === limpo) await atualizar(`encomendas/${usuario.uid}/${chave}`, registro);
+          }
+        }
+      }
+    } catch (erro) {}
+  };
+
+  // Confirma ao voltar dos checkouts (parâmetros na URL)
+  useEffect(() => {
+    if (!usuario) return;
+    const params = new URLSearchParams(window.location.search);
+    const nsuIP = params.get("order_nsu");
+    const slugIP = params.get("slug");
+    const txIP = params.get("transaction_nsu");
+    const statusMP = params.get("collection_status") || params.get("status");
+    const refMP = params.get("external_reference");
+    const paymentIdMP = params.get("payment_id") || params.get("paymentId") || "";
+
+    if (nsuIP && (slugIP || txIP)) {
+      window.history.replaceState({}, "", window.location.pathname);
+      (async () => {
+        await salvarIdentificadores(nsuIP, slugIP, txIP);
+        try {
+          const resposta = await fetch(`${apiBase}/api/infinitepay/payment-check`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ orderNsu: nsuIP, slug: slugIP || "", transactionNsu: txIP || "" }),
+          });
+          const dados = await resposta.json();
+          if (dados.paid && (await marcarPagoRef.current(nsuIP))) {
+            toast.success("Pagamento confirmado! Pedido marcado como pago.");
+          }
+        } catch (erro) {}
+      })();
+      return;
+    }
+
+    if (statusMP && refMP) {
+      window.history.replaceState({}, "", window.location.pathname);
+      (async () => {
+        let verificado = false;
+        if (paymentIdMP) {
+          try {
+            const resposta = await fetch(`${apiBase}/api/mercadopago/confirmar-pagamento`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ paymentId: paymentIdMP, orderNsu: refMP }),
+            });
+            const dados = await resposta.json();
+            verificado = dados.verificado === true || dados.motivo === "sem-token";
+          } catch (erro) {}
+        }
+        if (verificado || !paymentIdMP) {
+          if (await marcarPagoRef.current(refMP)) {
+            toast.success("Pagamento confirmado! Pedido marcado como pago.");
+          }
+        } else {
+          toast.info("Ainda não conseguimos confirmar esse pagamento — pode levar alguns minutos.");
+        }
+      })();
+    }
+  }, [usuario]);
+
+  // Consulta periódica: pega Pix pago depois que a cliente saiu da página
+  useEffect(() => {
+    if (!usuario) return;
+    const pendentes = [...pedidos, ...encomendas].filter(
+      (p) =>
+        (p.Status || "") === "Aguardando Pagamento" &&
+        String(p.MetodoPagamento || "").includes("InfinitePay") &&
+        p.PagamentoInfinitePay &&
+        p.PagamentoInfinitePay.slug
+    );
+    if (pendentes.length === 0) return;
+
+    let ativo = true;
+    const checar = async () => {
+      for (const item of pendentes.slice(0, 5)) {
+        if (!ativo) return;
+        try {
+          const resposta = await fetch(`${apiBase}/api/infinitepay/payment-check`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              orderNsu: item.PagamentoInfinitePay.order_nsu,
+              slug: item.PagamentoInfinitePay.slug || "",
+              transactionNsu: item.PagamentoInfinitePay.transaction_nsu || "",
+            }),
+          });
+          const dados = await resposta.json();
+          if (dados.paid && (await marcarPagoRef.current(item.PagamentoInfinitePay.order_nsu))) {
+            toast.success("Pagamento do Pix confirmado! Pedido marcado como pago.");
+            return;
+          }
+        } catch (erro) {}
+      }
+    };
+    checar();
+    const intervalo = setInterval(checar, 20000);
+    return () => {
+      ativo = false;
+      clearInterval(intervalo);
+    };
+  }, [usuario, pedidos, encomendas]);
+
   const handleCancelar = async (firebaseKey, tipo) => {
     if (!window.confirm("Deseja realmente cancelar esta solicitação?")) return;
     setProcessandoAcao(firebaseKey);
@@ -116,8 +294,19 @@ export default function MeusPedidos() {
       });
       if (!resposta.ok) throw new Error("Erro na InfinitePay");
       const dados = await resposta.json();
-      if (dados.url) window.location.href = dados.url;
-      else toast.error("Não foi possível recuperar o link de pagamento.");
+      if (dados.url) {
+        try {
+          await update(ref(db, `pedidos/${pedido.FirebaseKey}`), {
+            PagamentoInfinitePay: {
+              order_nsu: payload.order_nsu,
+              slug: dados.slug || dados.invoice_slug || "",
+              transaction_nsu: dados.transaction_nsu || "",
+              salvoEm: Date.now(),
+            },
+          });
+        } catch (e) {}
+        window.location.href = dados.url;
+      } else toast.error("Não foi possível recuperar o link de pagamento.");
     } catch (erro) {
       toast.error("Falha ao conectar com a InfinitePay. Tente mais tarde.");
     } finally {
