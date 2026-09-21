@@ -7,6 +7,7 @@ import { auth } from "../lib/firebase";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { useConfiguracoes, ehAdmin } from "../lib/configuracoes";
 import { brl } from "../lib/formato";
+import logoVal from "../assets/logo-val.png";
 import { FiUser, FiShoppingBag, FiLogOut, FiPackage, FiMenu, FiX, FiSettings } from "react-icons/fi";
 
 export default function Navbar() {
@@ -59,17 +60,18 @@ export default function Navbar() {
       className="fixed top-0 left-0 right-0 h-16 z-40 bg-creme/95 backdrop-blur-md border-b border-espresso/10 flex items-center justify-between px-4 sm:px-6"
       data-testid="navbar-principal"
     >
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-1.5 sm:gap-4">
         <button
           onClick={() => setMenuAberto(true)}
-          className="md:hidden p-2 text-espresso hover:text-rose transition-colors"
+          className="md:hidden p-1.5 sm:p-2 text-espresso hover:text-rose transition-colors"
           aria-label="Abrir menu"
           data-testid="navbar-menu-mobile-botao"
         >
           <FiMenu size={22} />
         </button>
-        <Link to="/" className="focus:outline-none" data-testid="navbar-logo">
-          <span className="font-display italic text-xl sm:text-2xl text-espresso tracking-tight">
+        <Link to="/" className="focus:outline-none flex items-center gap-1.5 sm:gap-2" data-testid="navbar-logo">
+          <img src={logoVal} alt="Logo Importados da Val" className="w-7 h-7 md:w-9 md:h-9 object-contain" data-testid="navbar-logo-imagem" />
+          <span className="font-display italic text-[15px] sm:text-2xl text-espresso tracking-tight whitespace-nowrap">
             Importados <span className="text-rose">da Val</span>
           </span>
         </Link>
@@ -98,7 +100,7 @@ export default function Navbar() {
         )}
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3 sm:gap-4">
         {usuario ? (
           <div className="relative" ref={menuRef}>
             <button

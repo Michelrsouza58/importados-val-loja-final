@@ -101,6 +101,7 @@ export default function CarrinhoGaveta() {
       Variante: i.varianteNome || "",
       PrecoReal: precoAjustado(i),
       Quantidade: i.quantidadeCarrinho,
+      SobreEncomenda: Number(i.QuantidadeEstoque) <= 0,
     }));
     const itensAjustados = itensDe(itensAtivos);
     const valorTotalAjustado = Math.round(itensAjustados.reduce((s, i) => s + i.PrecoReal * i.Quantidade, 0) * 100) / 100;
@@ -149,6 +150,23 @@ export default function CarrinhoGaveta() {
       toast.error("Falha ao registrar o pedido. Verifique sua conexão e tente novamente.");
       return null;
     }
+    // Avisa as administradoras por e-mail (melhor esforço, sem bloquear o pagamento)
+    try {
+      fetch(`${apiBase}/api/emails/pedido`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tipo: pronta.length > 0 ? "pedido" : "encomenda",
+          numero: nsu,
+          clienteEmail: usuario.email,
+          itens: itensAjustados,
+          total: valorTotalAjustado,
+          cupom: cupomAplicado ? cupomAplicado.Codigo : "",
+          dataHora: new Date().toLocaleString("pt-BR"),
+        }),
+      }).catch(() => {});
+    } catch (e) {}
+
     return { nsu, itensAjustados, valorTotalAjustado };
   };
 
