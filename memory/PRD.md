@@ -26,6 +26,7 @@ Cliente já tinha um site de vendas 100% front-end (Vite + React + Firebase RTDB
 - Pop-up de detalhes do pedido em Meus Pedidos: clicar no pedido abre modal com código, cliente, pagamento, data, cupom, itens e total; clicar na foto/nome do item abre o modal do produto (igual ao catálogo) — itens sem produto no catálogo mostram aviso.
 - Logo própria da marca (monograma V em degradê rose-gold com brilho, fundo transparente) na navbar e como favicon da aba do navegador (CRA + export).
 - Vitrine com destaque comercial: o produto escolhido para a abertura ganha cartão com preço e botão "Ver produto" (abre o modal), e o admin pode habilitar um selo de cupom sobre a imagem (escolhe qual cupom ativo exibir + rótulo automático, ex.: "10% OFF").
+- Admin refinado: barra de busca na aba Produtos (nome/código) e nos Pedidos (nº do pedido, nome do cliente via cadastro, e-mail); edição de produto por clique em qualquer parte do card (lixeira flutuante com stopPropagation); parcelamento sem juros por pedido (campo SemJuros, selo no admin e condição especial exibida à cliente no pop-up); Financeiro com painel de números (faturamento recebido, aguardando pagamento, gastos, lucro) e lançamentos de gastos (nó gastos) — taxas movidas para o fim da página.
 - Export Cloudflare: projeto Vite equivalente + Pages Functions (Mercado Pago + e-mails) + README-DEPLOY (regras do RTDB, domínios autorizados, variáveis de segredo).
 
 ## Pendências / Backlog

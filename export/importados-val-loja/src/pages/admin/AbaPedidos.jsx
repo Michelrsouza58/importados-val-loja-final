@@ -4,7 +4,7 @@ import { db } from "../../lib/firebase";
 import { ref, onValue, update } from "firebase/database";
 import { toast } from "sonner";
 import { brl } from "../../lib/formato";
-import { FiShoppingBag, FiBox, FiMinus, FiPlus, FiTrash2 } from "react-icons/fi";
+import { FiShoppingBag, FiBox, FiMinus, FiPlus, FiTrash2, FiSearch, FiStar } from "react-icons/fi";
 
 const STATUS = ["Aguardando Pagamento", "Pago", "Enviado", "Entregue", "Cancelado"];
 
@@ -12,6 +12,8 @@ export default function AbaPedidos() {
   const [aba, setAba] = useState("pedidos");
   const [pedidos, setPedidos] = useState([]);
   const [encomendas, setEncomendas] = useState([]);
+  const [clientes, setClientes] = useState({});
+  const [busca, setBusca] = useState("");
   const [carregando, setCarregando] = useState(true);
 
   useEffect(() => {
@@ -49,11 +51,31 @@ export default function AbaPedidos() {
       }
     );
 
+    const clientesRef = ref(db, "clientes");
+    const unsubClientes = onValue(
+      clientesRef,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const mapa = {};
+          Object.entries(snapshot.val()).forEach(([uid, valores]) => {
+            mapa[uid] = (valores && valores.Nome) || "";
+          });
+          setClientes(mapa);
+        } else {
+          setClientes({});
+        }
+      },
+      () => setClientes({})
+    );
+
     return () => {
       unsubPedidos();
       unsubEncomendas();
+      unsubClientes();
     };
   }, []);
+
+  const nomeDe = (item) => (item.UsuarioId && clientes[item.UsuarioId]) || "";
 
   const mudarStatus = async (tipo, item, novoStatus) => {
     try {
@@ -91,7 +113,27 @@ export default function AbaPedidos() {
     salvarItens(tipo, item, itens);
   };
 
+  const salvarSemJuros = async (item, valor) => {
+    const n = Math.max(0, Math.min(12, Number(valor) || 0));
+    try {
+      const rota = aba === "pedidos" ? `pedidos/${item.FirebaseKey}` : `encomendas/${item.UsuarioId}/${item.FirebaseKey}`;
+      await update(ref(db, rota), { SemJuros: n });
+      if (n > 0) toast.success(`Condição especial salva: até ${n}x sem juros.`);
+    } catch (erro) {
+      toast.error("Falha ao salvar o parcelamento sem juros.");
+    }
+  };
+
   const lista = aba === "pedidos" ? pedidos : encomendas;
+
+  const listaFiltrada = lista.filter((item) => {
+    const termo = busca.trim().toLowerCase();
+    if (!termo) return true;
+    const numero = String(item.NumeroPedido || item.CodigoVisual || item.FirebaseKey).toLowerCase();
+    const email = String(item.UsuarioEmail || "").toLowerCase();
+    const nome = String(nomeDe(item)).toLowerCase();
+    return numero.includes(termo) || email.includes(termo) || nome.includes(termo);
+  });
 
   return (
     <div data-testid="admin-aba-pedidos">
@@ -126,6 +168,17 @@ export default function AbaPedidos() {
         </div>
       </div>
 
+      <div className="max-w-md relative mb-4">
+        <FiSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-rose" size={13} />
+        <input
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          placeholder="Buscar por nº do pedido, nome ou e-mail..."
+          className="w-full pl-10 pr-4 py-2.5 bg-white border border-pessego/30 rounded-xl focus:outline-none focus:border-rose text-xs text-espresso"
+          data-testid="admin-pedidos-busca"
+        />
+      </div>
+
       {carregando ? (
         <div className="flex justify-center py-16">
           <div className="w-6 h-6 border-2 border-rose border-t-transparent rounded-full animate-spin" />
@@ -136,7 +189,7 @@ export default function AbaPedidos() {
         </div>
       ) : (
         <div className="space-y-3">
-          {lista.map((item) => (
+          {listaFiltrada.map((item) => (
             <div key={item.FirebaseKey} className="bg-white rounded-2xl border border-pessego/20 p-5 shadow-sm" data-testid={`admin-pedido-card-${item.FirebaseKey}`}>
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-espresso/5 pb-3 mb-3">
                 <div>
@@ -183,10 +236,31 @@ export default function AbaPedidos() {
                 ))}
               </div>
 
-              <div className="flex justify-between items-center pt-3 mt-3 border-t border-espresso/5">
-                <span className="text-[9px] uppercase tracking-widest text-espresso/40">{item.MetodoPagamento || "—"}</span>
+              <div className="flex justify-between items-center gap-3 pt-3 mt-3 border-t border-espresso/5" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center gap-3 flex-wrap min-w-0">
+                  <span className="text-[9px] uppercase tracking-widest text-espresso/40">{item.MetodoPagamento || "—"}</span>
+                  <label className="flex items-center gap-1.5 text-[10px] text-espresso/50 font-semibold whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                    Sem juros até
+                    <input
+                      type="number"
+                      min={0}
+                      max={12}
+                      defaultValue={item.SemJuros || ""}
+                      onBlur={(e) => salvarSemJuros(item, e.target.value)}
+                      placeholder="0"
+                      className="w-12 px-2 py-1 bg-creme border border-pessego/30 rounded-lg text-[11px] font-mono text-espresso focus:outline-none focus:border-rose text-center"
+                      data-testid={`admin-pedido-semjuros-${item.FirebaseKey}`}
+                    />
+                    x
+                  </label>
+                </div>
                 <span className="text-sm font-display font-black text-rose" data-testid={`admin-pedido-total-${item.FirebaseKey}`}>{brl(item.ValorTotal || 0)}</span>
               </div>
+              {Number(item.SemJuros) > 0 && (
+                <span className="flex items-center gap-1.5 text-[10px] text-gold font-bold uppercase tracking-widest mt-2" data-testid={`admin-pedido-semjuros-selo-${item.FirebaseKey}`}>
+                  <FiStar size={10} /> Condição especial: até {item.SemJuros}x sem juros
+                </span>
+              )}
               {item.Cupom && (
                 <div className="flex justify-between items-center text-[10px] text-emerald-700 pt-1" data-testid={`admin-pedido-cupom-${item.FirebaseKey}`}>
                   <span className="uppercase tracking-widest font-semibold">Cupom {item.Cupom}</span>
