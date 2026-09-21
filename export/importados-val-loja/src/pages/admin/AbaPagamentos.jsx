@@ -3,11 +3,20 @@ import React, { useState } from "react";
 import { db } from "../../lib/firebase";
 import { ref, set } from "firebase/database";
 import { toast } from "sonner";
-import { FiSave, FiInfo } from "react-icons/fi";
+import { FiSave, FiInfo, FiLink2 } from "react-icons/fi";
+
+const FORM_VAZIO = () => ({
+  infinitepayHandle: "",
+  infinitepayWebhookUrl: "",
+  infinitepayWebhookN8n: "",
+  mercadoPagoAccessToken: "",
+  mercadoPagoPublicKey: "",
+});
 
 export default function AbaPagamentos({ config }) {
   const [form, setForm] = useState({
     infinitepayHandle: config.pagamentos.infinitepayHandle || "",
+    infinitepayWebhookUrl: config.pagamentos.infinitepayWebhookUrl || "",
     infinitepayWebhookN8n: config.pagamentos.infinitepayWebhookN8n || "",
     mercadoPagoAccessToken: config.pagamentos.mercadoPagoAccessToken || "",
     mercadoPagoPublicKey: config.pagamentos.mercadoPagoPublicKey || "",
@@ -20,9 +29,14 @@ export default function AbaPagamentos({ config }) {
     setSalvando(true);
     try {
       await set(ref(db, "configuracoes/pagamentos"), form);
-      toast.success("Credenciais de pagamento salvas!");
+      toast.success("Credenciais de pagamento salvas no banco!");
     } catch (erro) {
-      toast.error("Falha ao salvar. Verifique as regras de escrita do Firebase.");
+      const motivo = (erro && (erro.code || erro.message)) || "erro desconhecido";
+      if (String(motivo).includes("permission")) {
+        toast.error("O Firebase recusou a escrita (permission denied). Aplique as regras do README-DEPLOY (seção 3) com uma conta logada.");
+      } else {
+        toast.error(`Falha ao salvar: ${motivo}`);
+      }
     } finally {
       setSalvando(false);
     }
@@ -36,7 +50,7 @@ export default function AbaPagamentos({ config }) {
       <div className="bg-white rounded-3xl border border-pessego/30 p-6 md:p-8 shadow-lg">
         <h2 className="font-display text-xl font-bold text-espresso">Credenciais de pagamento</h2>
         <p className="text-[11px] text-espresso/50 mt-2">
-          Preencha e atualize as credenciais quando quiser — o site passa a usá-las imediatamente.
+          Preencha e atualize quando quiser — tudo é salvo no banco e o site passa a usar imediatamente.
         </p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
@@ -53,7 +67,23 @@ export default function AbaPagamentos({ config }) {
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-espresso/50">Webhook n8n (opcional)</label>
+              <label className="text-[10px] font-bold uppercase tracking-wider text-espresso/50 flex items-center gap-1.5">
+                <FiLink2 className="text-gold" size={11} /> Webhook de pagamento (InfinitePay → ActivePieces)
+              </label>
+              <input
+                value={form.infinitepayWebhookUrl}
+                onChange={(e) => set("infinitepayWebhookUrl", e.target.value)}
+                className={campoClasse}
+                placeholder="https://cloud.activepieces.com/api/v1/webhooks/..."
+                data-testid="admin-pagamentos-infinitepay-webhook-url"
+              />
+              <p className="text-[10px] text-espresso/40">
+                A URL que a InfinitePay avisa quando o pagamento cai (seu fluxo do ActivePieces). Fica salva aqui no
+                banco — e lembre de cadastrá-la também no app da InfinitePay.
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-espresso/50">Webhook para CRIAR o link (n8n — opcional)</label>
               <input
                 value={form.infinitepayWebhookN8n}
                 onChange={(e) => set("infinitepayWebhookN8n", e.target.value)}
@@ -62,7 +92,8 @@ export default function AbaPagamentos({ config }) {
                 data-testid="admin-pagamentos-infinitepay-webhook"
               />
               <p className="text-[10px] text-espresso/40">
-                Se preenchido, o checkout Pix passa pelo seu fluxo do n8n. Se vazio, o site chama a InfinitePay direto.
+                Diferente do campo de cima: este é chamado NA HORA da compra para gerar o link de checkout. Se vazio,
+                o site chama a InfinitePay direto. Deixe vazio se você usa ActivePieces apenas para o aviso de pagamento.
               </p>
             </div>
           </div>
@@ -93,8 +124,8 @@ export default function AbaPagamentos({ config }) {
             <div className="flex items-start gap-2 bg-amber-50 border border-amber-100 rounded-xl p-3">
               <FiInfo className="text-amber-700 shrink-0 mt-0.5" size={13} />
               <p className="text-[10px] text-amber-800 leading-relaxed">
-                Obtenha em developers.mercadopago.com > Sua aplicação > Credenciais. No Cloudflare, configure também
-                a variável MP_ACCESS_TOKEN na função serverless (veja o README do deploy).
+                Obtenha em developers.mercadopago.com > Sua aplicação > Credenciais. No Cloudflare, a função lê este
+                token daqui (via chave de serviço) — ou configure a variável MP_ACCESS_TOKEN.
               </p>
             </div>
           </div>
