@@ -1,7 +1,7 @@
 // src/pages/admin/AbaProdutos.jsx
 import React, { useState, useEffect } from "react";
 import { db, storage } from "../../lib/firebase";
-import { ref as dbRef, onValue, set as dbSet, remove, push } from "firebase/database";
+import { ref as dbRef, onValue, set as dbSet, remove, push, get, runTransaction } from "firebase/database";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { toast } from "sonner";
 import { CATEGORIAS, normalizarProduto } from "../../lib/produtos";
@@ -47,6 +47,15 @@ export default function AbaProdutos() {
     return () => unsub();
   }, []);
 
+  const abrirNovo = async () => {
+    setForm(FORM_VAZIO());
+    try {
+      const snap = await get(dbRef(db, "configuracoes/ultimoCodigoProduto"));
+      const atual = Number(snap.val() || 0);
+      setForm((f) => ({ ...f, CodigoBarras: `IV${String(atual + 1).padStart(6, "0")}` }));
+    } catch (erro) {}
+  };
+
   const set = (campo, valor) => setForm((f) => ({ ...f, [campo]: valor }));
 
   const setVariante = (idx, campo, valor) =>
@@ -85,6 +94,18 @@ export default function AbaProdutos() {
     }
     setSalvando(true);
     try {
+      let codigoFinal = form.CodigoBarras.trim();
+      if (!form.key) {
+        if (!codigoFinal) {
+          const resultado = await runTransaction(dbRef(db, "configuracoes/ultimoCodigoProduto"), (atual) => (atual === null ? 1 : atual + 1));
+          codigoFinal = `IV${String(resultado.snapshot.val()).padStart(6, "0")}`;
+        } else {
+          try {
+            await runTransaction(dbRef(db, "configuracoes/ultimoCodigoProduto"), (atual) => (atual === null ? 1 : atual + 1));
+          } catch (erro) {}
+        }
+      }
+
       const variantesObj = {};
       form.Variantes.forEach((v) => {
         if (v.Nome && v.Nome.trim()) {
@@ -103,7 +124,7 @@ export default function AbaProdutos() {
         Categoria: form.Categoria,
         PrecoReal: Number(String(form.PrecoReal).replace(",", ".")) || 0,
         Descricao: form.Descricao || "",
-        CodigoBarras: form.CodigoBarras || "---",
+        CodigoBarras: codigoFinal || "---",
         QuantidadeEstoque: Number(form.QuantidadeEstoque) || 0,
         FotoUrl: form.FotoUrl || "",
         Variantes: variantesObj,
@@ -161,8 +182,15 @@ export default function AbaProdutos() {
         <h2 className="font-display text-xl font-bold text-espresso">Produtos ({produtos.length})</h2>
         <button
           onClick={() => setForm(FORM_VAZIO())}
-          className="flex items-center gap-2 bg-rose hover:bg-rosedark text-white px-5 py-2.5 rounded-full text-[10px] font-bold uppercase tracking-widest shadow-md transition-all"
+          className="hidden md:flex md:items-center md:gap-2 bg-rose hover:bg-rosedark text-white px-5 py-2.5 rounded-full text-[10px] font-bold uppercase tracking-widest shadow-md transition-all"
           data-testid="admin-produto-novo-botao"
+        >
+          <FiPlus size={13} /> Novo Produto
+        </button>
+        <button
+          onClick={abrirNovo}
+          className="flex md:hidden items-center gap-2 bg-rose hover:bg-rosedark text-white px-5 py-2.5 rounded-full text-[10px] font-bold uppercase tracking-widest shadow-md transition-all"
+          data-testid="admin-produto-novo-botao-mobile"
         >
           <FiPlus size={13} /> Novo Produto
         </button>
@@ -199,8 +227,8 @@ export default function AbaProdutos() {
               <input value={form.QuantidadeEstoque} onChange={(e) => set("QuantidadeEstoque", e.target.value)} className={campoClasse} placeholder="10" data-testid="admin-produto-estoque" />
             </div>
             <div className="space-y-1.5">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-espresso/50">Código de barras</label>
-              <input value={form.CodigoBarras} onChange={(e) => set("CodigoBarras", e.target.value)} className={campoClasse} placeholder="7890000000010" data-testid="admin-produto-codigo" />
+              <label className="text-[10px] font-bold uppercase tracking-wider text-espresso/50">Código do produto (IV000001)</label>
+              <input value={form.CodigoBarras} onChange={(e) => set("CodigoBarras", e.target.value.toUpperCase())} className={`${campoClasse} font-mono uppercase`} placeholder="IV000001 — gerado automaticamente" data-testid="admin-produto-codigo" />
             </div>
             <div className="space-y-1.5">
               <label className="text-[10px] font-bold uppercase tracking-wider text-espresso/50">Foto principal (URL ou upload)</label>

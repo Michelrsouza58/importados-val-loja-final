@@ -1,6 +1,7 @@
 // src/components/Navbar.jsx
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate, Link, useLocation } from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion";
 import { useCarrinho } from "../context/CarrinhoContext";
 import { auth } from "../lib/firebase";
 import { onAuthStateChanged, signOut } from "firebase/auth";
@@ -25,24 +26,22 @@ export default function Navbar() {
   }, []);
 
   useEffect(() => {
-    function aoClicarFora(event) {
-      if (menuRef.current && !menuRef.current.contains(event.target)) {
-        setMenuPerfilAberto(false);
-      }
-    }
-    document.addEventListener("mousedown", aoClicarFora);
-    return () => document.removeEventListener("mousedown", aoClicarFora);
-  }, []);
-
-  useEffect(() => {
     setMenuAberto(false);
     setMenuPerfilAberto(false);
   }, [location.pathname]);
+
+  useEffect(() => {
+    document.body.style.overflow = menuAberto ? "hidden" : "";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [menuAberto]);
 
   const handleLogout = async () => {
     try {
       await signOut(auth);
       setMenuPerfilAberto(false);
+      setMenuAberto(false);
       navigate("/");
     } catch (error) {}
   };
@@ -55,18 +54,19 @@ export default function Navbar() {
   ];
 
   return (
-    <nav
-      className="fixed top-0 left-0 right-0 h-16 z-40 bg-creme/85 backdrop-blur-md border-b border-espresso/10 flex items-center justify-between px-4 sm:px-6"
+    <>
+      <nav
+      className="fixed top-0 left-0 right-0 h-16 z-40 bg-creme/95 backdrop-blur-md border-b border-espresso/10 flex items-center justify-between px-4 sm:px-6"
       data-testid="navbar-principal"
     >
       <div className="flex items-center gap-4">
         <button
-          onClick={() => setMenuAberto(!menuAberto)}
+          onClick={() => setMenuAberto(true)}
           className="md:hidden p-2 text-espresso hover:text-rose transition-colors"
           aria-label="Abrir menu"
           data-testid="navbar-menu-mobile-botao"
         >
-          {menuAberto ? <FiX size={22} /> : <FiMenu size={22} />}
+          <FiMenu size={22} />
         </button>
         <Link to="/" className="focus:outline-none" data-testid="navbar-logo">
           <span className="font-display italic text-xl sm:text-2xl text-espresso tracking-tight">
@@ -175,27 +175,92 @@ export default function Navbar() {
         </button>
       </div>
 
-      {menuAberto && (
-        <div className="fixed inset-0 top-16 bg-creme md:hidden z-30 p-6">
-          <div className="flex flex-col gap-2 pt-4">
-            {links.map((l) => (
-              <Link
-                key={l.para}
-                to={l.para}
-                className="py-4 border-b border-espresso/5 font-display italic text-2xl text-espresso"
-                data-testid={`navbar-mobile-${l.para.replace("/", "") || "inicio"}`}
-              >
-                {l.rotulo}
-              </Link>
-            ))}
-            {admin && (
-              <Link to="/admin" className="py-4 border-b border-espresso/5 font-display italic text-2xl text-gold" data-testid="navbar-mobile-admin">
-                Painel Admin
-              </Link>
-            )}
-          </div>
-        </div>
-      )}
+      {/* ─── MENU MOBILE ─── (renderizado FORA da navbar abaixo) */}
     </nav>
+
+      <AnimatePresence>
+        {menuAberto && (
+          <div className="fixed inset-0 z-50 md:hidden" data-testid="menu-mobile">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-espresso/50 backdrop-blur-sm"
+              onClick={() => setMenuAberto(false)}
+              data-testid="menu-mobile-fundo"
+            />
+            <motion.aside
+              initial={{ x: "-100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "-100%" }}
+              transition={{ type: "spring", damping: 30, stiffness: 260 }}
+              className="absolute inset-y-0 left-0 w-80 max-w-[85vw] bg-creme border-r border-espresso/10 shadow-2xl flex flex-col"
+              data-testid="menu-mobile-painel"
+            >
+              <div className="flex items-center justify-between p-5 bg-white border-b border-espresso/10">
+                <span className="font-display italic text-xl text-espresso">
+                  Importados <span className="text-rose">da Val</span>
+                </span>
+                <button
+                  onClick={() => setMenuAberto(false)}
+                  className="p-2 rounded-full hover:bg-creme text-espresso"
+                  aria-label="Fechar menu"
+                  data-testid="navbar-menu-mobile-fechar"
+                >
+                  <FiX size={20} />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-5 space-y-1">
+                {links.map((l) => (
+                  <Link
+                    key={l.para}
+                    to={l.para}
+                    className={`block px-4 py-4 rounded-2xl font-display italic text-2xl transition-colors ${
+                      location.pathname === l.para ? "bg-white text-rose" : "text-espresso hover:bg-white"
+                    }`}
+                    data-testid={`navbar-mobile-${l.para.replace("/", "") || "inicio"}`}
+                  >
+                    {l.rotulo}
+                  </Link>
+                ))}
+                {admin && (
+                  <Link
+                    to="/admin"
+                    className="block px-4 py-4 rounded-2xl font-display italic text-2xl text-gold hover:bg-white transition-colors"
+                    data-testid="navbar-mobile-admin"
+                  >
+                    Painel Admin
+                  </Link>
+                )}
+              </div>
+
+              <div className="p-5 bg-white border-t border-espresso/10">
+                {usuario ? (
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-[11px] text-espresso/50 truncate">{usuario.email}</p>
+                    <button
+                      onClick={handleLogout}
+                      className="shrink-0 flex items-center gap-2 bg-rose/5 border border-rose/20 text-rose px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest"
+                      data-testid="navbar-mobile-sair"
+                    >
+                      <FiLogOut size={12} /> Sair
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => navigate("/login")}
+                    className="w-full bg-rose hover:bg-rosedark text-white py-3 rounded-xl text-[11px] font-bold uppercase tracking-widest transition-all"
+                    data-testid="navbar-mobile-entrar"
+                  >
+                    Entrar / Cadastrar
+                  </button>
+                )}
+              </div>
+            </motion.aside>
+          </div>
+        )}
+      </AnimatePresence>
+    </>
   );
 }

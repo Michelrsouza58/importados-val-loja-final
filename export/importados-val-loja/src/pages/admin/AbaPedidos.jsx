@@ -144,6 +144,12 @@ export default function AbaPedidos() {
                 <span className="text-[9px] uppercase tracking-widest text-espresso/40">{item.MetodoPagamento || "—"}</span>
                 <span className="text-sm font-display font-black text-rose">{brl(item.ValorTotal || 0)}</span>
               </div>
+              {item.Cupom && (
+                <div className="flex justify-between items-center text-[10px] text-emerald-700 pt-1" data-testid={`admin-pedido-cupom-${item.FirebaseKey}`}>
+                  <span className="uppercase tracking-widest font-semibold">Cupom {item.Cupom}</span>
+                  <span className="font-mono font-bold">−{brl(item.ValorCupom || 0)}</span>
+                </div>
+              )}
             </div>
           ))}
         </div>
