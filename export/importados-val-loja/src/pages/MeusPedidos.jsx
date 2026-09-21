@@ -44,7 +44,9 @@ export default function MeusPedidos() {
       pedidosRef,
       (snapshot) => {
         if (snapshot.exists()) {
-          const lista = Object.entries(snapshot.val()).map(([key, valores]) => ({ FirebaseKey: key, ...valores }));
+          const lista = Object.entries(snapshot.val())
+            .map(([key, valores]) => ({ FirebaseKey: key, ...valores }))
+            .filter((p) => p && (p.Itens || p.NumeroPedido));
           const meus = lista.filter((p) => p.UsuarioId === usuario.uid);
           meus.sort((a, b) => String(b.NumeroPedido || "").localeCompare(String(a.NumeroPedido || "")));
           setPedidos(meus);

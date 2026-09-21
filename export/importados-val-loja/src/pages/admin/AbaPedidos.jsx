@@ -22,7 +22,9 @@ export default function AbaPedidos() {
       pedidosRef,
       (snapshot) => {
         if (snapshot.exists()) {
-          const lista = Object.entries(snapshot.val()).map(([key, valores]) => ({ FirebaseKey: key, ...valores }));
+          const lista = Object.entries(snapshot.val())
+            .map(([key, valores]) => ({ FirebaseKey: key, ...valores }))
+            .filter((p) => p && (p.Itens || p.NumeroPedido));
           lista.reverse();
           setPedidos(lista);
         } else setPedidos([]);
