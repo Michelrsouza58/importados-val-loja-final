@@ -6,7 +6,7 @@ import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage
 import { toast } from "sonner";
 import { CATEGORIAS, normalizarProduto } from "../../lib/produtos";
 import { brl } from "../../lib/formato";
-import { FiPlus, FiTrash2, FiEdit2, FiImage, FiX } from "react-icons/fi";
+import { FiPlus, FiTrash2, FiImage, FiX, FiSearch } from "react-icons/fi";
 
 const FORM_VAZIO = () => ({
   key: null,
@@ -26,6 +26,16 @@ export default function AbaProdutos() {
   const [form, setForm] = useState(null);
   const [salvando, setSalvando] = useState(false);
   const [subindo, setSubindo] = useState(false);
+  const [busca, setBusca] = useState("");
+
+  const produtosFiltrados = produtos.filter((p) => {
+    const termo = busca.trim().toLowerCase();
+    if (!termo) return true;
+    return (
+      p.Nome.toLowerCase().includes(termo) ||
+      String(p.CodigoBarras).toLowerCase().includes(termo)
+    );
+  });
 
   useEffect(() => {
     const produtosRef = dbRef(db, "items");
@@ -178,7 +188,7 @@ export default function AbaProdutos() {
 
   return (
     <div data-testid="admin-aba-produtos">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <h2 className="font-display text-xl font-bold text-espresso">Produtos ({produtos.length})</h2>
         <button
           onClick={() => setForm(FORM_VAZIO())}
@@ -194,6 +204,17 @@ export default function AbaProdutos() {
         >
           <FiPlus size={13} /> Novo Produto
         </button>
+      </div>
+
+      <div className="max-w-sm relative mb-6">
+        <FiSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-rose" size={13} />
+        <input
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          placeholder="Buscar por nome ou código (IV000001)..."
+          className="w-full pl-10 pr-4 py-2.5 bg-white border border-pessego/30 rounded-xl focus:outline-none focus:border-rose text-xs text-espresso"
+          data-testid="admin-produtos-busca"
+        />
       </div>
 
       {form && (
@@ -329,10 +350,11 @@ export default function AbaProdutos() {
         </div>
       ) : (
         <div className="space-y-3">
-          {produtos.map((produto) => (
+          {produtosFiltrados.map((produto) => (
             <div
               key={produto.FirebaseKey}
-              className="bg-white rounded-2xl border border-pessego/20 p-4 flex items-center gap-4 shadow-sm"
+              onClick={() => editar(produto)}
+              className="bg-white rounded-2xl border border-pessego/20 p-4 flex items-center gap-4 shadow-sm relative cursor-pointer hover:border-rose/50 hover:shadow-md transition-all"
               data-testid={`admin-produto-linha-${produto.FirebaseKey}`}
             >
               <div className="w-14 h-16 bg-creme rounded-xl overflow-hidden border border-espresso/5 shrink-0">
@@ -346,14 +368,21 @@ export default function AbaProdutos() {
                 </p>
                 <p className="text-xs font-mono font-bold text-rose mt-1">{brl(produto.PrecoReal)}</p>
               </div>
-              <button onClick={() => editar(produto)} className="p-2.5 rounded-xl border border-espresso/10 text-espresso/60 hover:text-rose hover:border-rose/40 transition-all" aria-label="Editar" data-testid={`admin-produto-editar-${produto.FirebaseKey}`}>
-                <FiEdit2 size={14} />
-              </button>
-              <button onClick={() => excluir(produto)} className="p-2.5 rounded-xl border border-rose/20 text-rose hover:bg-rose/5 transition-all" aria-label="Excluir" data-testid={`admin-produto-excluir-${produto.FirebaseKey}`}>
-                <FiTrash2 size={14} />
+              <button
+                onClick={(e) => { e.stopPropagation(); excluir(produto); }}
+                className="absolute top-3 right-3 p-2 rounded-xl bg-white border border-rose/20 text-rose hover:bg-rose/5 shadow-sm transition-all"
+                aria-label="Excluir"
+                data-testid={`admin-produto-excluir-${produto.FirebaseKey}`}
+              >
+                <FiTrash2 size={13} />
               </button>
             </div>
           ))}
+          {produtosFiltrados.length === 0 && produtos.length > 0 && (
+            <p className="text-center text-xs text-espresso/40 py-8 italic" data-testid="admin-produtos-busca-vazia">
+              Nenhum produto encontrado com "{busca}".
+            </p>
+          )}
         </div>
       )}
     </div>

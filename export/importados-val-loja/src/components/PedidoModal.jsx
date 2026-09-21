@@ -3,7 +3,7 @@ import React from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import { brl } from "../lib/formato";
-import { FiX, FiTag, FiChevronRight } from "react-icons/fi";
+import { FiX, FiTag, FiChevronRight, FiStar } from "react-icons/fi";
 
 export default function PedidoModal({ pedido, tipo, produtos, onFechar, aoAbrirProduto }) {
   if (!pedido) return null;
@@ -94,6 +94,15 @@ export default function PedidoModal({ pedido, tipo, produtos, onFechar, aoAbrirP
                 <FiTag className="text-emerald-700" size={13} />
                 <p className="text-[11px] text-emerald-800 font-semibold">
                   Cupom {pedido.Cupom} · desconto de {brl(pedido.ValorCupom || 0)}
+                </p>
+              </div>
+            )}
+
+            {Number(pedido.SemJuros) > 0 && (
+              <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5" data-testid="pedido-modal-semjuros">
+                <FiStar className="text-amber-600 shrink-0" size={13} />
+                <p className="text-[11px] text-amber-800 font-semibold">
+                  Condição especial da Val: pague em até {pedido.SemJuros}x sem juros!
                 </p>
               </div>
             )}
