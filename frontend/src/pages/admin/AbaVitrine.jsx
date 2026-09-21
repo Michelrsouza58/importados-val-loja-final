@@ -4,13 +4,15 @@ import { db } from "../../lib/firebase";
 import { ref as dbRef, onValue, set as dbSet } from "firebase/database";
 import { toast } from "sonner";
 import { normalizarProduto } from "../../lib/produtos";
-import { FiImage, FiStar, FiSave, FiCheck } from "react-icons/fi";
+import { FiImage, FiStar, FiSave, FiCheck, FiTag } from "react-icons/fi";
 
 export default function AbaVitrine({ config }) {
   const [produtos, setProdutos] = useState([]);
+  const [cupons, setCupons] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [heroKey, setHeroKey] = useState((config.vitrine && config.vitrine.heroKey) || "");
   const [destaques, setDestaques] = useState((config.vitrine && config.vitrine.destaques) || []);
+  const [cupomEscolhido, setCupomEscolhido] = useState((config.vitrine && config.vitrine.heroCupomCodigo) || "");
   const [salvando, setSalvando] = useState(false);
 
   useEffect(() => {
@@ -30,11 +32,35 @@ export default function AbaVitrine({ config }) {
         setCarregando(false);
       }
     );
-    return () => unsub();
+
+    const cuponsRef = dbRef(db, "cupons");
+    const unsubCupons = onValue(
+      cuponsRef,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          setCupons(
+            Object.entries(snapshot.val())
+              .map(([chave, valores]) => ({ Key: chave, ...valores }))
+              .filter((c) => c.Ativo !== false)
+          );
+        } else {
+          setCupons([]);
+        }
+      },
+      () => setCupons([])
+    );
+
+    return () => {
+      unsub();
+      unsubCupons();
+    };
   }, []);
 
   const fotoDe = (produto) =>
     (produto && (produto.FotoUrl || (produto.Variantes[0] && produto.Variantes[0].FotoUrl))) || "";
+
+  const rotuloCupom = (cupom) =>
+    cupom.Tipo === "valor" ? `R$ ${Number(cupom.Valor).toFixed(2)} OFF` : `${Number(cupom.Valor)}% OFF`;
 
   const alternarDestaque = (chave) => {
     setDestaques((atual) => {
@@ -50,7 +76,12 @@ export default function AbaVitrine({ config }) {
   const salvar = async () => {
     setSalvando(true);
     try {
-      await dbSet(dbRef(db, "configuracoes/vitrine"), { heroKey, destaques });
+      await dbSet(dbRef(db, "configuracoes/vitrine"), {
+        heroKey,
+        destaques,
+        heroCupomCodigo: cupomEscolhido,
+        heroCupomRotulo: cupomEscolhido ? rotuloCupom(cupons.find((c) => c.Key === cupomEscolhido) || {}) : "",
+      });
       toast.success("Vitrine atualizada! A home já mostra as suas escolhas.");
     } catch (erro) {
       toast.error("Falha ao salvar. Verifique as regras de escrita do Firebase.");
@@ -67,8 +98,8 @@ export default function AbaVitrine({ config }) {
           <h2 className="font-display text-xl font-bold text-espresso">Imagem de abertura do site</h2>
         </div>
         <p className="text-[11px] text-espresso/50 mb-6">
-          Escolha qual produto cadastrado aparece na foto grande do início do site. Se nenhum for escolhido,
-          mantemos a imagem padrão.
+          Escolha qual produto cadastrado aparece na foto grande do início do site — ele ganha um cartão com o
+          preço, como destaque. Se nenhum for escolhido, mantemos a imagem padrão.
         </p>
 
         {carregando ? (
@@ -125,6 +156,39 @@ export default function AbaVitrine({ config }) {
         )}
       </div>
 
+      <div className="bg-white rounded-3xl border border-pessego/30 p-6 md:p-8 shadow-lg mb-6">
+        <div className="flex items-center gap-3 mb-1">
+          <FiTag className="text-gold" size={18} />
+          <h2 className="font-display text-xl font-bold text-espresso">Cupom em destaque na vitrine</h2>
+        </div>
+        <p className="text-[11px] text-espresso/50 mb-6">
+          Habilita um selo sobre a imagem de abertura mostrando que existe cupom para o produto em destaque.
+          Crie cupons na aba Cupons.
+        </p>
+
+        <div className="max-w-xs space-y-1.5">
+          <label className="text-[10px] font-bold uppercase tracking-wider text-espresso/50">Cupom exibido</label>
+          <select
+            value={cupomEscolhido}
+            onChange={(e) => setCupomEscolhido(e.target.value)}
+            className="w-full px-4 py-2.5 bg-creme/60 border border-pessego/30 rounded-xl focus:outline-none focus:border-rose text-xs text-espresso"
+            data-testid="vitrine-cupom-select"
+          >
+            <option value="">Nenhum (sem selo de cupom)</option>
+            {cupons.map((cupom) => (
+              <option key={cupom.Key} value={cupom.Key}>
+                {cupom.Codigo} — {rotuloCupom(cupom)}
+              </option>
+            ))}
+          </select>
+          {cupomEscolhido && (
+            <div className="mt-3 inline-flex items-center gap-2 bg-rose text-white text-[10px] font-bold uppercase tracking-widest px-4 py-2 rounded-full shadow-md" data-testid="vitrine-cupom-preview">
+              Prévia: Cupom {cupomEscolhido} · {rotuloCupom(cupons.find((c) => c.Key === cupomEscolhido) || {})}
+            </div>
+          )}
+        </div>
+      </div>
+
       <div className="bg-white rounded-3xl border border-pessego/30 p-6 md:p-8 shadow-lg">
         <div className="flex items-center gap-3 mb-1">
           <FiStar className="text-gold" size={18} />
@@ -137,13 +201,7 @@ export default function AbaVitrine({ config }) {
           catálogo.
         </p>
 
-        {carregando ? (
-          <div className="flex justify-center py-10">
-            <div className="w-6 h-6 border-2 border-rose border-t-transparent rounded-full animate-spin" />
-          </div>
-        ) : produtos.length === 0 ? (
-          <p className="text-xs text-espresso/40 italic py-6 text-center">Cadastre produtos primeiro (aba Produtos).</p>
-        ) : (
+        {!carregando && produtos.length > 0 && (
           <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
             {produtos.map((produto) => {
               const foto = fotoDe(produto);

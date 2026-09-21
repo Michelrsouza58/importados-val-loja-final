@@ -180,6 +180,33 @@ def _enviar_email(to: str, subject: str, email_html: str):
         return json.loads(resposta.read().decode("utf-8"))
 
 
+def _tabela_pedido(subtitulo: str, numero: str, cliente_email: str, linhas: str, cupom_linha: str, total: float) -> str:
+    marca = html.escape(EMAIL_FROM_NAME)
+    return (
+        f"<table role='presentation' width='100%' style='background:#FAF9F6;padding:24px'>"
+        f"<tr><td><table role='presentation' width='100%' style='max-width:560px;background:#FFFFFF;"
+        f"border-radius:12px;padding:24px;font-family:Arial,sans-serif'>"
+        f"<tr><td style='padding-bottom:12px'>"
+        f"<h2 style='margin:0;color:#B76E79;font-size:18px'>{marca}</h2>"
+        f"<p style='margin:4px 0 0;color:#6E5B5B;font-size:13px'>{subtitulo}</p>"
+        f"</td></tr>"
+        f"<tr><td style='border-top:1px solid #eee;padding:12px 0'>"
+        f"<p style='margin:4px 0;color:#2C1D1D'>Pedido: <strong>{numero}</strong></p>"
+        f"<p style='margin:4px 0;color:#2C1D1D'>Cliente: {html.escape((cliente_email or '')[:80])}</p>"
+        f"{cupom_linha}"
+        f"</td></tr>"
+        f"<tr><td style='border-top:1px solid #eee'><table role='presentation' width='100%'>{linhas}"
+        f"<tr><td style='padding-top:10px;color:#2C1D1D'><strong>Total</strong></td>"
+        f"<td style='padding-top:10px;text-align:right;color:#B76E79'><strong>R$ {total:.2f}</strong></td></tr>"
+        f"</table></td></tr>"
+        f"<tr><td style='border-top:1px solid #eee;padding-top:12px'>"
+        f"<p style='margin:0;font-size:12px;color:#888'>Enviado por {marca}. "
+        f"Nunca pedimos senha ou dados de cartão por e-mail.</p>"
+        f"</td></tr>"
+        f"</table></td></tr></table>"
+    )
+
+
 @app.post("/api/emails/pedido")
 async def notificar_pedido(req: NotificarPedidoRequest):
     if not EMAIL_KEY:
@@ -191,9 +218,6 @@ async def notificar_pedido(req: NotificarPedidoRequest):
 
     numero = re.sub(r"[^A-Za-z0-9#-]", "", req.numero)[:32] or "---"
     eh_encomenda = req.tipo == "encomenda"
-    assunto = (
-        f"Nova encomenda — {EMAIL_FROM_NAME}" if eh_encomenda else f"Novo pedido {numero} — {EMAIL_FROM_NAME}"
-    )
 
     linhas = ""
     for item in req.itens[:30]:
@@ -211,29 +235,17 @@ async def notificar_pedido(req: NotificarPedidoRequest):
         else ""
     )
 
-    email_html = (
-        f"<table role='presentation' width='100%' style='background:#FAF9F6;padding:24px'>"
-        f"<tr><td><table role='presentation' width='100%' style='max-width:560px;background:#FFFFFF;"
-        f"border-radius:12px;padding:24px;font-family:Arial,sans-serif'>"
-        f"<tr><td style='padding-bottom:12px'>"
-        f"<h2 style='margin:0;color:#B76E79;font-size:18px'>{html.escape(EMAIL_FROM_NAME)}</h2>"
-        f"<p style='margin:4px 0 0;color:#6E5B5B;font-size:13px'>"
-        f"{'Nova encomenda registrada' if eh_encomenda else 'Novo pedido registrado'} em {html.escape(req.dataHora[:40])}</p>"
-        f"</td></tr>"
-        f"<tr><td style='border-top:1px solid #eee;padding:12px 0'>"
-        f"<p style='margin:4px 0;color:#2C1D1D'>Pedido: <strong>{numero}</strong></p>"
-        f"<p style='margin:4px 0;color:#2C1D1D'>Cliente: {html.escape((req.clienteEmail or '')[:80])}</p>"
-        f"{cupom_linha}"
-        f"</td></tr>"
-        f"<tr><td style='border-top:1px solid #eee'><table role='presentation' width='100%'>{linhas}"
-        f"<tr><td style='padding-top:10px;color:#2C1D1D'><strong>Total</strong></td>"
-        f"<td style='padding-top:10px;text-align:right;color:#B76E79'><strong>R$ {req.total:.2f}</strong></td></tr>"
-        f"</table></td></tr>"
-        f"<tr><td style='border-top:1px solid #eee;padding-top:12px'>"
-        f"<p style='margin:0;font-size:12px;color:#888'>Enviado por {html.escape(EMAIL_FROM_NAME)}. "
-        f"Nunca pedimos senha ou dados de cartão por e-mail.</p>"
-        f"</td></tr>"
-        f"</table></td></tr></table>"
+    # 1) Aviso para as administradoras
+    assunto = (
+        f"Nova encomenda — {EMAIL_FROM_NAME}" if eh_encomenda else f"Novo pedido {numero} — {EMAIL_FROM_NAME}"
+    )
+    email_html = _tabela_pedido(
+        subtitulo=f"{'Nova encomenda registrada' if eh_encomenda else 'Novo pedido registrado'} em {html.escape(req.dataHora[:40])}",
+        numero=numero,
+        cliente_email=req.clienteEmail,
+        linhas=linhas,
+        cupom_linha=cupom_linha,
+        total=req.total,
     )
 
     resultados = {}
@@ -244,4 +256,32 @@ async def notificar_pedido(req: NotificarPedidoRequest):
         except Exception as erro:
             resultados[destino] = f"falha: {erro}"
 
-    return {"status": "processado", "assunto": assunto, "resultados": resultados}
+    # 2) Comprovante para a cliente
+    comprovante_para: list[str] = []
+    cliente_email = (req.clienteEmail or "").strip().lower()
+    if re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", cliente_email):
+        assunto_cliente = (
+            f"Comprovante da encomenda — {EMAIL_FROM_NAME}"
+            if eh_encomenda
+            else f"Comprovante do pedido {numero} — {EMAIL_FROM_NAME}"
+        )
+        saudacao = (
+            "Olá! Registramos sua encomenda e a Val fará a importação na próxima remessa. Obrigada pela confiança!"
+            if eh_encomenda
+            else "Olá! Recebemos seu pedido e já estamos cuidando de cada detalhe. Obrigada pela confiança!"
+        )
+        email_html_cliente = _tabela_pedido(
+            subtitulo=html.escape(saudacao[:120]),
+            numero=numero,
+            cliente_email=cliente_email,
+            linhas=linhas,
+            cupom_linha=cupom_linha,
+            total=req.total,
+        )
+        try:
+            _enviar_email(cliente_email, assunto_cliente, email_html_cliente)
+            comprovante_para.append(cliente_email)
+        except Exception as erro:
+            resultados[f"cliente:{cliente_email}"] = f"falha: {erro}"
+
+    return {"status": "processado", "assunto": assunto, "resultados": resultados, "comprovantePara": comprovante_para}

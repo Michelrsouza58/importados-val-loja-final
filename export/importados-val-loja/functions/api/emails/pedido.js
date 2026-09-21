@@ -86,7 +86,42 @@ export const onRequestPost = async ({ request, env }) => {
         resultados[destino] = "falha";
       }
     }
-    return Response.json({ status: "processado", assunto, resultados });
+
+    // Comprovante para a cliente
+    const comprovantePara = [];
+    const clienteEmail = String(corpo.clienteEmail || "").trim().toLowerCase();
+    if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(clienteEmail)) {
+      const assuntoCliente = encomenda ? `Comprovante da encomenda — ${marca}` : `Comprovante do pedido ${esc(numero)} — ${marca}`;
+      const saudacao = encomenda
+        ? "Olá! Registramos sua encomenda e a Val fará a importação na próxima remessa. Obrigada pela confiança!"
+        : "Olá! Recebemos seu pedido e já estamos cuidando de cada detalhe. Obrigada pela confiança!";
+      const emailCliente =
+        `<table role='presentation' width='100%' style='background:#FAF9F6;padding:24px'><tr><td>` +
+        `<table role='presentation' width='100%' style='max-width:560px;background:#FFFFFF;border-radius:12px;padding:24px;font-family:Arial,sans-serif'>` +
+        `<tr><td style='padding-bottom:12px'><h2 style='margin:0;color:#B76E79;font-size:18px'>${marca}</h2>` +
+        `<p style='margin:4px 0 0;color:#6E5B5B;font-size:13px'>${esc(saudacao.slice(0, 120))}</p></td></tr>` +
+        `<tr><td style='border-top:1px solid #eee;padding:12px 0'><p style='margin:4px 0;color:#2C1D1D'>Pedido: <strong>${esc(numero)}</strong></p>` +
+        `<p style='margin:4px 0;color:#2C1D1D'>Cliente: ${esc(clienteEmail.slice(0, 80))}</p>${cupomLinha}</td></tr>` +
+        `<tr><td style='border-top:1px solid #eee'><table role='presentation' width='100%'>${linhas}` +
+        `<tr><td style='padding-top:10px;color:#2C1D1D'><strong>Total</strong></td><td style='padding-top:10px;text-align:right;color:#B76E79'><strong>R$ ${total.toFixed(2)}</strong></td></tr>` +
+        `</table></td></tr>` +
+        `<tr><td style='border-top:1px solid #eee;padding-top:12px'><p style='margin:0;font-size:12px;color:#888'>Enviado por ${marca}. Nunca pedimos senha ou dados de cartão por e-mail.</p></td></tr>` +
+        `</table></td></tr></table>`;
+      try {
+        const resposta = await fetch(`${EMAIL_BASE_URL}/api/v1/email/send`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Email-Key": env.EMERGENT_EMAIL_KEY },
+          body: JSON.stringify({ to: [clienteEmail], subject: assuntoCliente, html: emailCliente, from_name: env.EMAIL_FROM_NAME || "Importados da Val" }),
+          signal: AbortSignal.timeout(20000),
+        });
+        if (resposta.ok) comprovantePara.push(clienteEmail);
+        else resultados[`cliente:${clienteEmail}`] = `falha: ${resposta.status}`;
+      } catch {
+        resultados[`cliente:${clienteEmail}`] = "falha";
+      }
+    }
+
+    return Response.json({ status: "processado", assunto, resultados, comprovantePara });
   } catch {
     return Response.json({ error: "Requisição inválida." }, { status: 400 });
   }

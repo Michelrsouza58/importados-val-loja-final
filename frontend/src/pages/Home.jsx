@@ -1,9 +1,10 @@
 // src/pages/Home.jsx
-import React, { useMemo, useRef } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { motion, useScroll, useTransform, useMotionValue, useSpring } from "framer-motion";
 import { useProdutos, precoEfetivo } from "../lib/produtos";
 import { useConfiguracoes } from "../lib/configuracoes";
+import ProdutoModal from "../components/ProdutoModal";
 import { brl } from "../lib/formato";
 import { Reveal, LinhaReveal } from "../components/Reveal";
 import Marquee from "../components/Marquee";
@@ -17,11 +18,15 @@ export default function Home() {
   const { config } = useConfiguracoes();
   const vitrine = config.vitrine || { heroKey: "", destaques: [] };
 
+  const produtoHero = useMemo(
+    () => produtos.find((p) => p.FirebaseKey === vitrine.heroKey) || null,
+    [produtos, vitrine.heroKey]
+  );
+
   const fotoHero = useMemo(() => {
-    const escolhido = produtos.find((p) => p.FirebaseKey === vitrine.heroKey);
-    if (!escolhido) return FOTO_HERO;
-    return escolhido.FotoUrl || (escolhido.Variantes[0] && escolhido.Variantes[0].FotoUrl) || FOTO_HERO;
-  }, [produtos, vitrine.heroKey]);
+    if (!produtoHero) return FOTO_HERO;
+    return produtoHero.FotoUrl || (produtoHero.Variantes[0] && produtoHero.Variantes[0].FotoUrl) || FOTO_HERO;
+  }, [produtoHero]);
 
   const destaques = useMemo(() => {
     if (!vitrine.destaques || vitrine.destaques.length === 0) return produtos.slice(0, 4);
@@ -32,6 +37,7 @@ export default function Home() {
   }, [produtos, vitrine.destaques]);
 
   const secaoHero = useRef(null);
+  const [produtoModalAberto, setProdutoModalAberto] = useState(null);
   const scrollY = useScroll();
   const parallaxY = useTransform(scrollY.scrollY, [0, 600], [0, 60]);
 
@@ -116,9 +122,36 @@ export default function Home() {
           <div className="md:col-span-5 relative" style={{ perspective: "1000px" }}>
             <motion.div style={{ y: parallaxY, rotateX, rotateY, transformStyle: "preserve-3d" }} className="relative">
               <div className="absolute inset-0 bg-gradient-to-tr from-rose/30 via-pessego/20 to-transparent blur-2xl rounded-full scale-110" />
-              <div className="relative rounded-t-[999px] rounded-b-[2rem] overflow-hidden border border-pessego/40 shadow-2xl aspect-[4/5] bg-creme" data-testid="hero-imagem-quadro">
-                <img src={fotoHero} alt="Produto em destaque escolhido pela Val" className="w-full h-full object-cover" data-testid="hero-imagem" />
+              <div
+                onClick={() => produtoHero && setProdutoModalAberto(produtoHero)}
+                className={`relative rounded-t-[999px] rounded-b-[2rem] overflow-hidden border border-pessego/40 shadow-2xl aspect-[4/5] bg-creme ${produtoHero ? "cursor-pointer group" : ""}`}
+                data-testid="hero-imagem-quadro"
+              >
+                <img src={fotoHero} alt="Produto em destaque escolhido pela Val" className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-700" data-testid="hero-imagem" />
               </div>
+
+              {vitrine.heroCupomCodigo && (
+                <div className="absolute -top-4 left-6 z-10 bg-rose text-white text-[10px] font-bold uppercase tracking-widest px-4 py-2 rounded-full shadow-lg" data-testid="hero-cupom-selo">
+                  Cupom {vitrine.heroCupomCodigo} · {vitrine.heroCupomRotulo}
+                </div>
+              )}
+
+              {produtoHero && (
+                <div className="absolute bottom-5 left-5 md:-left-8 z-10 bg-white/85 backdrop-blur-md border border-white/60 shadow-xl rounded-2xl px-5 py-4 max-w-[230px]" data-testid="hero-produto-cartao">
+                  <p className="text-[9px] font-bold uppercase tracking-[0.25em] text-rose mb-1.5">Escolhido pela Val</p>
+                  <p className="text-xs font-bold text-espresso uppercase tracking-wide leading-tight line-clamp-2">{produtoHero.Nome}</p>
+                  <p className="font-display text-lg font-black text-rose mt-2" data-testid="hero-produto-preco">
+                    {brl(precoEfetivo(produtoHero, null))}
+                  </p>
+                  <button
+                    onClick={() => setProdutoModalAberto(produtoHero)}
+                    className="mt-2.5 w-full bg-espresso hover:bg-ink text-creme py-2 rounded-xl text-[9px] font-bold uppercase tracking-widest transition-all"
+                    data-testid="hero-produto-ver-botao"
+                  >
+                    Ver produto
+                  </button>
+                </div>
+              )}
 
               <motion.div
                 animate={{ y: [0, -10, 0] }}
@@ -262,6 +295,10 @@ export default function Home() {
           </Reveal>
         </div>
       </section>
+
+      {produtoModalAberto && (
+        <ProdutoModal produto={produtoModalAberto} onFechar={() => setProdutoModalAberto(null)} />
+      )}
     </div>
   );
 }

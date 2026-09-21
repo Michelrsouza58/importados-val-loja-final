@@ -6,9 +6,12 @@ import { onAuthStateChanged } from "firebase/auth";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useConfiguracoes } from "../lib/configuracoes";
+import { useProdutos } from "../lib/produtos";
 import Footer from "./Footer";
+import PedidoModal from "../components/PedidoModal";
+import ProdutoModal from "../components/ProdutoModal";
 import { brl } from "../lib/formato";
-import { FiPackage, FiBox, FiCreditCard, FiTrash2 } from "react-icons/fi";
+import { FiPackage, FiBox, FiCreditCard, FiTrash2, FiChevronRight } from "react-icons/fi";
 
 export default function MeusPedidos() {
   const [pedidos, setPedidos] = useState([]);
@@ -17,8 +20,11 @@ export default function MeusPedidos() {
   const [carregando, setCarregando] = useState(true);
   const [usuario, setUsuario] = useState(null);
   const [processandoAcao, setProcessandoAcao] = useState(null);
+  const [pedidoAberto, setPedidoAberto] = useState(null);
+  const [produtoModalAberto, setProdutoModalAberto] = useState(null);
   const navigate = useNavigate();
   const { config } = useConfiguracoes();
+  const { produtos } = useProdutos();
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -131,20 +137,23 @@ export default function MeusPedidos() {
       <div className="max-w-2xl mx-auto px-6 mb-8">
         <div className="flex bg-white border border-pessego/20 p-1.5 rounded-2xl shadow-sm">
           {[
-            { chave: "pronta-entrega", rotulo: "Pronta Entrega", icone: <FiPackage size={13} />, total: pedidos.length, teste: "pedidos-aba-pronta" },
-            { chave: "encomendas", rotulo: "Encomendas", icone: <FiBox size={13} />, total: encomendas.length, teste: "pedidos-aba-encomendas" },
-          ].map((aba) => (
-            <button
-              key={aba.chave}
-              onClick={() => setAbaAtiva(aba.chave)}
-              className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all duration-300 ${
-                abaAtiva === aba.chave ? "bg-rose text-white shadow-md" : "text-espresso hover:bg-creme"
-              }`}
-              data-testid={aba.teste}
-            >
-              {aba.icone} {aba.rotulo} ({aba.total})
-            </button>
-          ))}
+            { chave: "pronta-entrega", rotulo: "Pronta Entrega", icone: FiPackage, total: pedidos.length, teste: "pedidos-aba-pronta" },
+            { chave: "encomendas", rotulo: "Encomendas", icone: FiBox, total: encomendas.length, teste: "pedidos-aba-encomendas" },
+          ].map((aba) => {
+            const Icone = aba.icone;
+            return (
+              <button
+                key={aba.chave}
+                onClick={() => setAbaAtiva(aba.chave)}
+                className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all duration-300 ${
+                  abaAtiva === aba.chave ? "bg-rose text-white shadow-md" : "text-espresso hover:bg-creme"
+                }`}
+                data-testid={aba.teste}
+              >
+                <Icone size={13} /> {aba.rotulo} ({aba.total})
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -169,7 +178,8 @@ export default function MeusPedidos() {
                     return (
                       <div
                         key={pedido.FirebaseKey}
-                        className={`bg-white rounded-3xl border p-6 shadow-md ${cancelado ? "border-espresso/10 bg-espresso/5" : "border-pessego/20"}`}
+                        onClick={() => setPedidoAberto({ pedido, tipo: "pedidos" })}
+                        className={`bg-white rounded-3xl border p-6 shadow-md cursor-pointer hover:shadow-lg transition-shadow ${cancelado ? "border-espresso/10 bg-espresso/5" : "border-pessego/20"}`}
                         data-testid={`pedido-card-${pedido.FirebaseKey}`}
                       >
                         <div className="flex flex-wrap justify-between items-center gap-2 border-b border-espresso/5 pb-4 mb-4">
@@ -179,22 +189,25 @@ export default function MeusPedidos() {
                               {pedido.DataPedido} às {pedido.HoraPedido} · {pedido.MetodoPagamento || "InfinitePay"}
                             </span>
                           </div>
-                          <span
-                            className={`text-[9px] font-bold px-2.5 py-1 rounded-md tracking-wider uppercase border ${
-                              cancelado
-                                ? "bg-rose/5 border-rose/20 text-rose"
-                                : aguardando
-                                ? "bg-amber-50 border-amber-200 text-amber-700"
-                                : "bg-emerald-50 border-emerald-200 text-emerald-700"
-                            }`}
-                            data-testid={`pedido-status-${pedido.FirebaseKey}`}
-                          >
-                            {pedido.Status || "Pendente"}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`text-[9px] font-bold px-2.5 py-1 rounded-md tracking-wider uppercase border ${
+                                cancelado
+                                  ? "bg-rose/5 border-rose/20 text-rose"
+                                  : aguardando
+                                  ? "bg-amber-50 border-amber-200 text-amber-700"
+                                  : "bg-emerald-50 border-emerald-200 text-emerald-700"
+                              }`}
+                              data-testid={`pedido-status-${pedido.FirebaseKey}`}
+                            >
+                              {pedido.Status || "Pendente"}
+                            </span>
+                            <FiChevronRight className="text-espresso/30" size={14} />
+                          </div>
                         </div>
 
                         <div className="space-y-3">
-                          {(pedido.Itens || []).map((item, index) => (
+                          {(pedido.Itens || []).slice(0, 3).map((item, index) => (
                             <div key={index} className="flex justify-between items-center text-xs">
                               <div className="text-espresso/70 truncate max-w-[75%]">
                                 <span className="font-bold text-espresso font-mono bg-creme border border-espresso/5 px-1.5 py-0.5 rounded mr-2">
@@ -208,6 +221,11 @@ export default function MeusPedidos() {
                               <span className="text-espresso/40 font-mono">{brl(item.PrecoReal * item.Quantidade)}</span>
                             </div>
                           ))}
+                          {(pedido.Itens || []).length > 3 && (
+                            <p className="text-[10px] text-rose font-bold uppercase tracking-widest">
+                              + {(pedido.Itens.length - 3)} item(ns) — ver detalhes
+                            </p>
+                          )}
                         </div>
 
                         <div className="mt-5 pt-4 border-t border-espresso/5 flex justify-between items-center">
@@ -218,7 +236,7 @@ export default function MeusPedidos() {
                         </div>
 
                         {aguardando && (
-                          <div className="mt-4 pt-4 border-t border-dashed border-espresso/10 flex gap-3">
+                          <div className="mt-4 pt-4 border-t border-dashed border-espresso/10 flex gap-3" onClick={(e) => e.stopPropagation()}>
                             <button
                               disabled={processandoAcao !== null}
                               onClick={() => handlePagarNovamente(pedido)}
@@ -229,7 +247,7 @@ export default function MeusPedidos() {
                             </button>
                             <button
                               disabled={processandoAcao !== null}
-                              onClick={() => handleCancelarPedidoSafe(handleCancelar, pedido.FirebaseKey, "pedido")}
+                              onClick={() => handleCancelar(pedido.FirebaseKey, "pedido")}
                               className="px-4 border border-rose/30 hover:bg-rose/5 text-rose py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
                               data-testid={`pedido-cancelar-${pedido.FirebaseKey}`}
                             >
@@ -256,7 +274,8 @@ export default function MeusPedidos() {
                     return (
                       <div
                         key={encomenda.FirebaseKey}
-                        className={`bg-white rounded-3xl border p-6 shadow-md ${cancelado ? "border-espresso/10 bg-espresso/5" : "border-amber-200/60"}`}
+                        onClick={() => setPedidoAberto({ pedido: encomenda, tipo: "encomendas" })}
+                        className={`bg-white rounded-3xl border p-6 shadow-md cursor-pointer hover:shadow-lg transition-shadow ${cancelado ? "border-espresso/10 bg-espresso/5" : "border-amber-200/60"}`}
                         data-testid={`encomenda-card-${encomenda.FirebaseKey}`}
                       >
                         <div className="flex flex-wrap justify-between items-center gap-2 border-b border-amber-100 pb-4 mb-4">
@@ -266,9 +285,12 @@ export default function MeusPedidos() {
                               Solicitado em {encomenda.DataEncomenda} às {encomenda.HoraEncomenda}
                             </span>
                           </div>
-                          <span className="text-[9px] font-bold px-2.5 py-1 rounded-md tracking-wider uppercase border bg-amber-50 border-amber-200 text-amber-800">
-                            {encomenda.Status || "Aguardando Compra"}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[9px] font-bold px-2.5 py-1 rounded-md tracking-wider uppercase border bg-amber-50 border-amber-200 text-amber-800">
+                              {encomenda.Status || "Aguardando Compra"}
+                            </span>
+                            <FiChevronRight className="text-espresso/30" size={14} />
+                          </div>
                         </div>
 
                         <div className="space-y-3">
@@ -289,7 +311,7 @@ export default function MeusPedidos() {
                         </div>
 
                         {aguardando && (
-                          <div className="mt-4 pt-3 border-t border-dashed border-amber-100 flex justify-end">
+                          <div className="mt-4 pt-3 border-t border-dashed border-amber-100 flex justify-end" onClick={(e) => e.stopPropagation()}>
                             <button
                               disabled={processandoAcao !== null}
                               onClick={() => handleCancelar(encomenda.FirebaseKey, "encomenda")}
@@ -317,11 +339,21 @@ export default function MeusPedidos() {
         )}
       </div>
 
+      {pedidoAberto && (
+        <PedidoModal
+          pedido={pedidoAberto.pedido}
+          tipo={pedidoAberto.tipo}
+          produtos={produtos}
+          onFechar={() => setPedidoAberto(null)}
+          aoAbrirProduto={(produto) => setProdutoModalAberto(produto)}
+        />
+      )}
+
+      {produtoModalAberto && (
+        <ProdutoModal produto={produtoModalAberto} onFechar={() => setProdutoModalAberto(null)} />
+      )}
+
       <Footer />
     </div>
   );
-}
-
-function handleCancelarPedidoSafe(fn, key, tipo) {
-  fn(key, tipo);
 }

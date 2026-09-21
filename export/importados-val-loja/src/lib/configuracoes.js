@@ -22,7 +22,7 @@ export const CONFIG_PADRAO = {
     mercadoPagoPublicKey: "",
   },
   admins: [],
-  vitrine: { heroKey: "", destaques: [] },
+  vitrine: { heroKey: "", destaques: [], heroCupomCodigo: "", heroCupomRotulo: "" },
 };
 
 function mesclarConfig(dados) {
