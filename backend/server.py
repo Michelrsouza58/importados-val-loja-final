@@ -137,13 +137,14 @@ class NotificarPedidoRequest(BaseModel):
     tipo: str = "pedido"
     numero: str = ""
     clienteEmail: str = ""
+    admins: list[str] = []
     itens: list[ItemNotificado] = []
     total: float = Field(default=0, ge=0)
     cupom: str = ""
     dataHora: str = ""
 
 
-def destinatarios_admin() -> list[str]:
+def destinatarios_admin(admins_extra=None) -> list[str]:
     """G4: os destinatários vêm SEMPRE de registros no servidor (env/painel), nunca do cliente."""
     destinos: list[str] = []
 
@@ -151,6 +152,12 @@ def destinatarios_admin() -> list[str]:
     for parte in re.split(r"[,;\s]+", valor_env):
         if "@" in parte:
             destinos.append(parte.strip().lower())
+
+    # Lista enviada pela sessão logada (vinda da aba Administradores do painel)
+    for email in (admins_extra or [])[:10]:
+        texto = str(email or "").strip().lower()
+        if re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", texto):
+            destinos.append(texto)
 
     db_url = os.environ.get("FIREBASE_DB_URL", "")
     if db_url:
@@ -212,7 +219,7 @@ async def notificar_pedido(req: NotificarPedidoRequest):
     if not EMAIL_KEY:
         return {"status": "indisponivel", "detail": "Envio de e-mail não configurado."}
 
-    destinos = destinatarios_admin()
+    destinos = destinatarios_admin(req.admins)
     if not destinos:
         return {"status": "sem-destinatarios", "detail": "Nenhum e-mail de administrador configurado."}
 
@@ -300,6 +307,7 @@ class PaymentCheckRequest(BaseModel):
     orderNsu: str
     slug: str = ""
     transactionNsu: str = ""
+    handle: str = ""
 
 
 class ConfirmarMPRequest(BaseModel):
@@ -309,8 +317,8 @@ class ConfirmarMPRequest(BaseModel):
 
 @app.post("/api/infinitepay/payment-check")
 async def infinitepay_payment_check(req: PaymentCheckRequest):
-    """Consulta POST /payment_check na InfinitePay. G4: o handle vem do servidor, nunca do navegador."""
-    handle = _limpar_id(INFINITEPAY_HANDLE, 40)
+    """Consulta POST /payment_check na InfinitePay. Preferência pelo handle do servidor; o do cliente é público."""
+    handle = _limpar_id(INFINITEPAY_HANDLE, 40) or _limpar_id(req.handle, 40)
     order_nsu = _limpar_id(req.orderNsu)
     if not handle or not order_nsu:
         return {"paid": False, "erro": "Configuração da InfinitePay ausente (INFINITEPAY_HANDLE) ou pedido sem NSU."}
