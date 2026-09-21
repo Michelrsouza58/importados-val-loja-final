@@ -285,3 +285,73 @@ async def notificar_pedido(req: NotificarPedidoRequest):
             resultados[f"cliente:{cliente_email}"] = f"falha: {erro}"
 
     return {"status": "processado", "assunto": assunto, "resultados": resultados, "comprovantePara": comprovante_para}
+
+
+# ─── CONFIRMAÇÃO AUTOMÁTICA DE PAGAMENTOS ───
+
+INFINITEPAY_HANDLE = os.environ.get("INFINITEPAY_HANDLE", "")
+
+
+def _limpar_id(valor: str, limite: int = 64) -> str:
+    return re.sub(r"[^A-Za-z0-9_-]", "", str(valor or ""))[:limite]
+
+
+class PaymentCheckRequest(BaseModel):
+    orderNsu: str
+    slug: str = ""
+    transactionNsu: str = ""
+
+
+class ConfirmarMPRequest(BaseModel):
+    paymentId: str
+    orderNsu: str = ""
+
+
+@app.post("/api/infinitepay/payment-check")
+async def infinitepay_payment_check(req: PaymentCheckRequest):
+    """Consulta POST /payment_check na InfinitePay. G4: o handle vem do servidor, nunca do navegador."""
+    handle = _limpar_id(INFINITEPAY_HANDLE, 40)
+    order_nsu = _limpar_id(req.orderNsu)
+    if not handle or not order_nsu:
+        return {"paid": False, "erro": "Configuração da InfinitePay ausente (INFINITEPAY_HANDLE) ou pedido sem NSU."}
+
+    payload = {"handle": handle, "order_nsu": order_nsu}
+    slug = _limpar_id(req.slug)
+    transaction = _limpar_id(req.transactionNsu)
+    if slug:
+        payload["slug"] = slug
+    if transaction:
+        payload["transaction_nsu"] = transaction
+
+    try:
+        resposta = _http_json("https://api.checkout.infinitepay.io/payment_check", method="POST", payload=payload)
+        pago = resposta.get("success") is True and resposta.get("paid") is True
+        return {"paid": pago, "captureMethod": resposta.get("capture_method", ""), "resposta": resposta}
+    except urllib.error.HTTPError:
+        return {"paid": False, "erro": "InfinitePay não encontrou esse pagamento ainda."}
+    except Exception:
+        return {"paid": False, "erro": "Falha de conexão com a InfinitePay."}
+
+
+@app.post("/api/mercadopago/confirmar-pagamento")
+async def mercadopago_confirmar(req: ConfirmarMPRequest):
+    token = os.environ.get("MP_ACCESS_TOKEN", "") or _token_do_firebase()
+    if not token:
+        return {"verificado": False, "motivo": "sem-token"}
+    payment_id = _limpar_id(req.paymentId)
+    if not payment_id:
+        return {"verificado": False, "motivo": "payment-id-invalido"}
+    try:
+        pagamento = _http_json(
+            f"https://api.mercadopago.com/v1/payments/{payment_id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    except urllib.error.HTTPError as erro:
+        return {"verificado": False, "motivo": f"mp-status-{erro.code}"}
+    except Exception:
+        return {"verificado": False, "motivo": "conexao"}
+
+    status_mp = str(pagamento.get("status", ""))
+    referencia = str(pagamento.get("external_reference", "") or "")
+    bate_ref = (not req.orderNsu) or (_limpar_id(referencia) == _limpar_id(req.orderNsu))
+    return {"verificado": status_mp == "approved" and bate_ref, "statusMp": status_mp, "referencia": referencia}
