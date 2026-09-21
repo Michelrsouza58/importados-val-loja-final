@@ -29,7 +29,7 @@ export default function AbaFinanceiro({ config }) {
     const unsubPedidos = onValue(
       dbRef(db, "pedidos"),
       (snapshot) => {
-        if (snapshot.exists()) setPedidos(Object.entries(snapshot.val()).map(([k, v]) => ({ FirebaseKey: k, ...v })));
+        if (snapshot.exists()) setPedidos(Object.entries(snapshot.val()).map(([k, v]) => ({ FirebaseKey: k, ...v })).filter((p) => p && (p.Itens || p.NumeroPedido)));
         else setPedidos([]);
       },
       () => setPedidos([])

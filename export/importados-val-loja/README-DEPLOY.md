@@ -65,7 +65,28 @@ Para testar antes de ir para produção, use o token de TESTE do Mercado Pago e
 os cartões de teste oficiais (Mastercard 5031 4332 1540 6351, CVV 123, validade
 11/30, titular APRO, CPF 12345678909).
 
-## 5. Estrutura
+## 5. Webhook da InfinitePay — status "Pago" automático
+
+Para o pedido virar "Pago" sozinho quando o Pix cair, use a função que já vai
+no repositório (nada de worker separado):
+
+1. Cloudflare > seu projeto Pages > Settings > Variables and Secrets (Encrypt):
+   - `INFINITEPAY_HANDLE` = sua @handle (ex: `michelrsouza`)
+   - `FIREBASE_DB_URL` = `https://importadosval-bbcec-default-rtdb.firebaseio.com`
+   - `FIREBASE_SERVICE_ACCOUNT` = conteúdo inteiro do JSON da chave de serviço.
+     Pegue em Firebase Console > Project Settings (engrenagem) > Service accounts
+     > **Generate new private key** (baixa um JSON — cole o conteúdo todo).
+2. No app da InfinitePay, cadastre a URL do webhook:
+   `https://SEU-SITE.pages.dev/api/webhooks/infinitepay`
+3. Pronto: o webhook confere o pagamento, acha o pedido certo (pronta entrega
+   ou encomenda) e grava `Status: "Pago"`.
+
+Se preferir manter o worker separado em workers.dev, use o arquivo
+`webhook-worker-exemplo.js` como base (a versão antiga não salvava porque o
+Firebase exige autenticação para escrever, o caminho pedidos/{nsu} não existe —
+o NSU fica dentro do registro — e os campos são com maiúsculas).
+
+## 6. Estrutura
 
 - `src/` — site (React + Tailwind + Firebase)
 - `functions/` — Cloudflare Pages Functions (servidor do Mercado Pago)
