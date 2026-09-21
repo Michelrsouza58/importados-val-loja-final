@@ -158,7 +158,7 @@ export default function Home() {
               {
                 numero: "02",
                 titulo: "Importação sem complicação",
-                texto: "Não encontrou em estoque? Nós importamos direto para você na próxima remessa — você acompanha tudo pelo app.",
+                texto: "Não encontrou em estoque? Nós importamos direto para você na próxima remessa.",
               },
               {
                 numero: "03",

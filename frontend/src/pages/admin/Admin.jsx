@@ -5,15 +5,17 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from "firebas
 import { toast } from "sonner";
 import { useConfiguracoes, ehAdmin } from "../../lib/configuracoes";
 import AbaProdutos from "./AbaProdutos";
+import AbaCupons from "./AbaCupons";
 import AbaFinanceiro from "./AbaFinanceiro";
 import AbaPagamentos from "./AbaPagamentos";
 import AbaAdmins from "./AbaAdmins";
 import AbaPedidos from "./AbaPedidos";
-import { FiMail, FiLock, FiLogOut, FiPackage, FiDollarSign, FiCreditCard, FiUsers, FiShoppingBag } from "react-icons/fi";
+import { FiMail, FiLock, FiLogOut, FiPackage, FiDollarSign, FiCreditCard, FiUsers, FiShoppingBag, FiTag } from "react-icons/fi";
 
 const ABAS = [
   { chave: "produtos", rotulo: "Produtos", icone: FiPackage, componente: AbaProdutos },
   { chave: "pedidos", rotulo: "Pedidos", icone: FiShoppingBag, componente: AbaPedidos },
+  { chave: "cupons", rotulo: "Cupons", icone: FiTag, componente: AbaCupons },
   { chave: "financeiro", rotulo: "Financeiro", icone: FiDollarSign, componente: AbaFinanceiro },
   { chave: "pagamentos", rotulo: "Pagamentos", icone: FiCreditCard, componente: AbaPagamentos },
   { chave: "admins", rotulo: "Administradores", icone: FiUsers, componente: AbaAdmins },

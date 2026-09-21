@@ -24,6 +24,7 @@ carrega. Em Firebase Console > Realtime Database > Rules, cole:
     "carrinho": { "$uid": { ".read": "auth != null && auth.uid === $uid", ".write": "auth != null && auth.uid === $uid" } },
     "pedidos": { ".read": "auth != null", ".write": "auth != null" },
     "encomendas": { ".read": "auth != null", ".write": "auth != null" },
+    "cupons": { ".read": "auth != null", ".write": "auth != null" },
     "configuracoes": { ".read": "auth != null", ".write": "auth != null" }
   }
 }
