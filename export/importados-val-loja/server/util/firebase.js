@@ -1,6 +1,5 @@
-// Utilitário compartilhado das Pages Functions.
-// Autentica no Firebase Realtime Database com a chave de serviço (secret único
-// obrigatório) para ler configurações do painel admin e gravar com autoridade.
+// Autenticação Firebase por chave de serviço + leituras como admin.
+// Compartilhado pelo worker.js (Workers) e pelas Pages Functions.
 
 export const DB_PADRAO = "https://importadosval-bbcec-default-rtdb.firebaseio.com";
 
@@ -48,11 +47,10 @@ export async function obterTokenDeAcesso(env) {
   return tokenCache.token;
 }
 
-function dbDe(env) {
+export function dbDe(env) {
   return env.FIREBASE_DB_URL || DB_PADRAO;
 }
 
-// Lê nós do Realtime Database como administradora (burla as regras com credencial de serviço)
 export async function lerComoAdmin(env, caminho) {
   try {
     const token = await obterTokenDeAcesso(env);

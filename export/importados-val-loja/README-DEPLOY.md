@@ -1,36 +1,57 @@
-# Importados da Val — Loja (Cloudflare Pages)
+# Importados da Val — Loja (Cloudflare)
 
 Loja redesignada em nível premium: home cinematográfica, catálogo com variantes
 (ex.: Body Splash Aroma 1 / Aroma 2), sacola com **Pix (InfinitePay)** e
 **Cartão (Mercado Pago)**, e **Painel Admin** completo.
 
-## 1. Publicar no Cloudflare Pages
+O deploy usa o modelo **Worker com script** (`worker.js` + `wrangler.jsonc`):
+é esse script que serve as rotas `/api/*` **e** o site — e é ele que libera a
+área de **Variables and Secrets** no painel (Worker "só de arquivos estáticos"
+não aceita variáveis, como você viu na tela).
+
+## 1. Publicar no Cloudflare (Workers com script)
 
 1. Suba esta pasta no seu repositório GitHub (substitua os arquivos antigos).
-2. Cloudflare > Workers & Pages > **Create application > Pages > Connect to Git**.
-3. Build command: `npm run build` — Output directory: `dist`.
-4. (A cada `git push` o site atualiza sozinho.)
+2. Seu projeto já está conectado (importados-val-loja-final) — no próximo
+   `git push` o Cloudflare roda `npm run build` e publica o Worker com o
+   script (`worker.js`) + o site (`dist`) + as rotas `/api/*`.
+3. O endereço do site fica em `...workers.dev` (ou no domínio próprio em
+   Domains).
 
-## 2. "As variáveis aparecem bloqueadas?" — leia aqui
+## 2. "As variáveis aparecem bloqueadas?" — resolvido pelo worker.js
 
-Onde ficam ( painel atual da Cloudflare ):
+A mensagem *"Variables cannot be added to a Worker that only has static
+assets"* aparecia porque o Worker não tinha script nenhum. **Com este pacote
+isso deixa de existir**: o `worker.js` (raiz) + `wrangler.jsonc` fazem o
+Worker ter script — e a área passa a aceitar cadastro.
 
-1. **Workers & Pages** > clique no **NOME do seu projeto** (na lista, não dentro
-   de um deploy específico — a tela de um deploy é só leitura).
-2. Aba **Settings** > role até **Variables and Secrets** > **Add**.
-3. Tipo: **Secret** · Ambiente: **Production** (depois repita em **Preview**).
+Depois de subir este pacote (push no GitHub):
 
-Se mesmo assim o botão estiver travado, cadastre o secret pelo terminal
-(uma linha, ele pede o valor para colar):
+1. **Workers & Pages** > abra **importados-val-loja-final** > **Settings** >
+   **Variables and Secrets** > **Add**:
+   - Tipo: **Secret** — Nome: `FIREBASE_SERVICE_ACCOUNT`
+   - Valor: o conteúdo inteiro do JSON gerado em Firebase Console >
+     Project Settings (engrenagem) > **Service accounts** > **Generate new
+     private key**
+2. Essa chave permite que as funções leiam o token do Mercado Pago e os
+   e-mails administradores direto do painel admin — nada mais para configurar.
+3. Opcional: `MP_ACCESS_TOKEN`, `INFINITEPAY_HANDLE`, `ADMIN_EMAILS`,
+   `FIREBASE_DB_URL` — todos têm padrão ou vêm do painel.
+
+Se o botão ainda estiver travado, cadastre pelo terminal (uma linha):
 
 ```bash
-npx wrangler pages secret put FIREBASE_SERVICE_ACCOUNT --project-name=NOME-DO-SEU-PROJETO
+npx wrangler pages secret put FIREBASE_SERVICE_ACCOUNT --project-name=importados-val-loja-final
 ```
 
 E enquanto o secret não estiver no ar, a loja continua vendendo sem travar:
 - **Pix** segue direto pela InfinitePay (confirmação ao retornar + webhook quando ativar);
 - **Cartão** cai automaticamente para o checkout da InfinitePay (que também aceita
   cartão) até o token do Mercado Pago ficar disponível.
+
+**Importante**: adicione o domínio do Worker (ex:
+`importados-val-loja-final.sua-conta.workers.dev`) em Firebase Console >
+Authentication > Settings > **Authorized domains**.
 
 ## 3. Configurar o Firebase (importante!)
 
@@ -112,7 +133,7 @@ no repositório (nada de worker separado):
    - `INFINITEPAY_HANDLE` (opcional): sua @handle — se não existir, o webhook
      aceita a handle que a própria InfinitePay envia no corpo.
 2. No app da InfinitePay, cadastre a URL do webhook:
-   `https://SEU-SITE.pages.dev/api/webhooks/infinitepay`
+   `https://importados-val-loja-final.SUA-CONTA.workers.dev/api/webhooks/infinitepay`
 3. Pronto: o webhook confere o pagamento, acha o pedido certo (pronta entrega
    ou encomenda) e grava `Status: "Pago"`.
 
