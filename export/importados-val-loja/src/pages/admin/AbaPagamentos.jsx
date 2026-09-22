@@ -1,39 +1,33 @@
 // src/pages/admin/AbaPagamentos.jsx
 import React, { useState } from "react";
 import { db } from "../../lib/firebase";
-import { ref, set } from "firebase/database";
+import { ref, set as setFirebase } from "firebase/database"; // 1. Renomeado a importação para evitar conflito
 import { toast } from "sonner";
 import { FiSave, FiInfo, FiLink2 } from "react-icons/fi";
 
-const FORM_VAZIO = () => ({
-  infinitepayHandle: "",
-  infinitepayWebhookUrl: "",
-  infinitepayWebhookN8n: "",
-  mercadoPagoAccessToken: "",
-  mercadoPagoPublicKey: "",
-});
-
 export default function AbaPagamentos({ config }) {
   const [form, setForm] = useState({
-    infinitepayHandle: config.pagamentos.infinitepayHandle || "",
-    infinitepayWebhookUrl: config.pagamentos.infinitepayWebhookUrl || "",
-    infinitepayWebhookN8n: config.pagamentos.infinitepayWebhookN8n || "",
-    mercadoPagoAccessToken: config.pagamentos.mercadoPagoAccessToken || "",
-    mercadoPagoPublicKey: config.pagamentos.mercadoPagoPublicKey || "",
+    infinitepayHandle: config?.pagamentos?.infinitepayHandle || "",
+    infinitepayWebhookUrl: config?.pagamentos?.infinitepayWebhookUrl || "",
+    infinitepayWebhookN8n: config?.pagamentos?.infinitepayWebhookN8n || "",
+    mercadoPagoAccessToken: config?.pagamentos?.mercadoPagoAccessToken || "",
+    mercadoPagoPublicKey: config?.pagamentos?.mercadoPagoPublicKey || "",
   });
   const [salvando, setSalvando] = useState(false);
 
-  const set = (campo, valor) => setForm((f) => ({ ...f, [campo]: valor }));
+  // 2. Renomeado a função do state para atualizarCampo
+  const atualizarCampo = (campo, valor) => setForm((f) => ({ ...f, [campo]: valor }));
 
   const salvar = async () => {
     setSalvando(true);
     try {
-      await set(ref(db, "configuracoes/pagamentos"), form);
+      // 3. Agora chama a função de escrita do Firebase do jeito certo
+      await setFirebase(ref(db, "configuracoes/pagamentos"), form);
       toast.success("Credenciais de pagamento salvas no banco!");
     } catch (erro) {
       const motivo = (erro && (erro.code || erro.message)) || "erro desconhecido";
       if (String(motivo).includes("permission")) {
-        toast.error("O Firebase recusou a escrita (permission denied). Aplique as regras do README-DEPLOY (seção 3) com uma conta logada.");
+        toast.error("O Firebase recusou a escrita (permission denied). Aplique as regras do README-DEPLOY com uma conta logada.");
       } else {
         toast.error(`Falha ao salvar: ${motivo}`);
       }
@@ -60,7 +54,7 @@ export default function AbaPagamentos({ config }) {
               <label className="text-[10px] font-bold uppercase tracking-wider text-espresso/50">Sua @handle (sem o $)</label>
               <input
                 value={form.infinitepayHandle}
-                onChange={(e) => set("infinitepayHandle", e.target.value)}
+                onChange={(e) => atualizarCampo("infinitepayHandle", e.target.value)}
                 className={campoClasse}
                 placeholder="ex: minhaloja"
                 data-testid="admin-pagamentos-infinitepay-handle"
@@ -72,7 +66,7 @@ export default function AbaPagamentos({ config }) {
               </label>
               <input
                 value={form.infinitepayWebhookUrl}
-                onChange={(e) => set("infinitepayWebhookUrl", e.target.value)}
+                onChange={(e) => atualizarCampo("infinitepayWebhookUrl", e.target.value)}
                 className={campoClasse}
                 placeholder="https://cloud.activepieces.com/api/v1/webhooks/..."
                 data-testid="admin-pagamentos-infinitepay-webhook-url"
@@ -86,7 +80,7 @@ export default function AbaPagamentos({ config }) {
               <label className="text-[10px] font-bold uppercase tracking-wider text-espresso/50">Webhook para CRIAR o link (n8n — opcional)</label>
               <input
                 value={form.infinitepayWebhookN8n}
-                onChange={(e) => set("infinitepayWebhookN8n", e.target.value)}
+                onChange={(e) => atualizarCampo("infinitepayWebhookN8n", e.target.value)}
                 className={campoClasse}
                 placeholder="https://...app.n8n.cloud/webhook/checkout"
                 data-testid="admin-pagamentos-infinitepay-webhook"
@@ -105,7 +99,7 @@ export default function AbaPagamentos({ config }) {
               <input
                 type="password"
                 value={form.mercadoPagoAccessToken}
-                onChange={(e) => set("mercadoPagoAccessToken", e.target.value)}
+                onChange={(e) => atualizarCampo("mercadoPagoAccessToken", e.target.value)}
                 className={campoClasse}
                 placeholder="APP_USR-..."
                 data-testid="admin-pagamentos-mp-token"
@@ -115,7 +109,7 @@ export default function AbaPagamentos({ config }) {
               <label className="text-[10px] font-bold uppercase tracking-wider text-espresso/50">Public Key (opcional)</label>
               <input
                 value={form.mercadoPagoPublicKey}
-                onChange={(e) => set("mercadoPagoPublicKey", e.target.value)}
+                onChange={(e) => atualizarCampo("mercadoPagoPublicKey", e.target.value)}
                 className={campoClasse}
                 placeholder="APP_USR-..."
                 data-testid="admin-pagamentos-mp-publickey"
@@ -124,8 +118,7 @@ export default function AbaPagamentos({ config }) {
             <div className="flex items-start gap-2 bg-amber-50 border border-amber-100 rounded-xl p-3">
               <FiInfo className="text-amber-700 shrink-0 mt-0.5" size={13} />
               <p className="text-[10px] text-amber-800 leading-relaxed">
-                Obtenha em developers.mercadopago.com > Sua aplicação > Credenciais. No Cloudflare, a função lê este
-                token daqui (via chave de serviço) — ou configure a variável MP_ACCESS_TOKEN.
+                Obtenha em developers.mercadopago.com &gt; Sua aplicação &gt; Credenciais.
               </p>
             </div>
           </div>
