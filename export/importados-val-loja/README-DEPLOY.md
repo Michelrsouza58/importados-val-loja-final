@@ -112,7 +112,17 @@ você só precisa cadastrar **um único secret** no Cloudflare:
     em Preview).
 - Essa chave permite que as funções do site leiam o token do Mercado Pago e os
   e-mails administradores direto do seu painel admin — nada mais para configurar.
-- **Alternativa mais simples à chave de serviço:** em vez do JSON gigante, cadastre
+- **Sem secrets no Cloudflare (o seu caso):** use o ActivePieces, igual ao Pix —
+  dois fluxos com os códigos prontos que vão no repositório:
+  1. `activepieces-cartao.js` → fluxo "criar pagamento": cole a URL dele em
+     Admin › Pagamentos › "Webhook para CRIAR o pagamento com cartão". O site
+     envia a sacola, o fluxo lê o Access Token salvo no painel e devolve o link
+     do Mercado Pago. Nenhuma variável no Cloudflare.
+  2. `activepieces-mp-pago.js` → fluxo "pagamento aprovado": cole a URL dele em
+     "Webhook de pagamento aprovado (Mercado Pago)". O link criado já leva esse
+     aviso embutido e o pedido vira "Pago" sozinho quando o cartão é aprovado.
+  Passo a passo completo: `activepieces-fluxo.md`, seção "Cartão sem secrets".
+- **Alternativa com chave de serviço:** em vez do JSON gigante, cadastre
   DOIS secrets curtos — `FIREBASE_SYSTEM_EMAIL` e `FIREBASE_SYSTEM_PASS` — usando o
   MESMO usuário de sistema do fluxo ActivePieces (`webhook@sistema-importadosval.com`
   e a senha dele). As funções fazem login no Firebase com esse usuário e leem o token

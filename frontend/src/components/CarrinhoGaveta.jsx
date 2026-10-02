@@ -272,23 +272,48 @@ export default function CarrinhoGaveta() {
       if (!compra) return;
 
       try {
-        const resposta = await fetch(`${apiBase}/api/mercadopago/create-preference`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            items: compra.itensAjustados.map((i) => ({
-              title: (i.Variante ? `${i.Nome} - ${i.Variante}` : i.Nome).toUpperCase(),
-              quantity: i.Quantidade,
-              unit_price: Number(i.PrecoReal),
-            })),
-            payerEmail: (auth.currentUser && auth.currentUser.email) || "",
-            origin: window.location.origin,
-            orderNsu: compra.nsu,
-          }),
-        });
-        const dados = await resposta.json();
-        if (!resposta.ok || !dados.initPoint) {
-          throw new Error(dados.error || "Falha ao iniciar pagamento");
+        const corpoMP = {
+          items: compra.itensAjustados.map((i) => ({
+            title: (i.Variante ? `${i.Nome} - ${i.Variante}` : i.Nome).toUpperCase(),
+            quantity: i.Quantidade,
+            unit_price: Number(i.PrecoReal),
+          })),
+          payerEmail: (auth.currentUser && auth.currentUser.email) || "",
+          origin: window.location.origin,
+          orderNsu: compra.nsu,
+        };
+
+        // Sem secrets no Cloudflare? Um fluxo do ActivePieces cria o pagamento:
+        // lê o Access Token salvo no painel (Firebase) e devolve { url }.
+        const webhookCriar = String(config.pagamentos.mercadoPagoWebhookCriar || "").trim();
+        let initPoint = null;
+        if (/^https:\/\//i.test(webhookCriar)) {
+          const respostaFluxo = await fetch(webhookCriar, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(corpoMP),
+          });
+          const dadosFluxo = await respostaFluxo.json();
+          initPoint =
+            (dadosFluxo &&
+              (dadosFluxo.url ||
+                dadosFluxo.initPoint ||
+                dadosFluxo.init_point ||
+                (dadosFluxo.body && dadosFluxo.body.url) ||
+                (dadosFluxo.data && dadosFluxo.data.url))) ||
+            null;
+          if (!initPoint) throw new Error("O fluxo do ActivePieces respondeu, mas sem o link de pagamento.");
+        } else {
+          const resposta = await fetch(`${apiBase}/api/mercadopago/create-preference`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(corpoMP),
+          });
+          const dados = await resposta.json();
+          if (!resposta.ok || !dados.initPoint) {
+            throw new Error(dados.error || "Falha ao iniciar pagamento");
+          }
+          initPoint = dados.initPoint;
         }
 
         // Liga o pagamento MP aos registros do pedido (para confirmar o status depois)
@@ -300,7 +325,7 @@ export default function CarrinhoGaveta() {
 
         itensAtivos.forEach((i) => removerDoCarrinho(i));
         setCarrinhoAberto(false);
-        window.location.assign(dados.initPoint);
+        window.location.assign(initPoint);
         return;
       } catch (erroMP) {
         const mensagem = String(erroMP.message || "");

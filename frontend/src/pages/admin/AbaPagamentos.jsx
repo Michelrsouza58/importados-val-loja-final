@@ -19,6 +19,8 @@ const FORM_VAZIO = () => ({
   infinitepayWebhookN8n: "",
   mercadoPagoAccessToken: "",
   mercadoPagoPublicKey: "",
+  mercadoPagoWebhookCriar: "",
+  mercadoPagoWebhookPago: "",
 });
 
 export default function AbaPagamentos({ config }) {
@@ -28,6 +30,8 @@ export default function AbaPagamentos({ config }) {
     infinitepayWebhookN8n: config.pagamentos.infinitepayWebhookN8n || "",
     mercadoPagoAccessToken: config.pagamentos.mercadoPagoAccessToken || "",
     mercadoPagoPublicKey: config.pagamentos.mercadoPagoPublicKey || "",
+    mercadoPagoWebhookCriar: config.pagamentos.mercadoPagoWebhookCriar || "",
+    mercadoPagoWebhookPago: config.pagamentos.mercadoPagoWebhookPago || "",
   });
   const [salvando, setSalvando] = useState(false);
   const [testeToken, setTesteToken] = useState(null);
@@ -168,6 +172,41 @@ export default function AbaPagamentos({ config }) {
                 data-testid="admin-pagamentos-mp-publickey"
               />
             </div>
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-espresso/50 flex items-center gap-1.5">
+                <FiLink2 className="text-gold" size={11} /> Webhook para CRIAR o pagamento com cartão (ActivePieces)
+              </label>
+              <input
+                value={form.mercadoPagoWebhookCriar}
+                onChange={(e) => set("mercadoPagoWebhookCriar", e.target.value)}
+                className={campoClasse}
+                placeholder="https://cloud.activepieces.com/api/v1/webhooks/..."
+                data-testid="admin-pagamentos-mp-webhook-criar"
+              />
+              <p className="text-[10px] text-espresso/40">
+                O caminho para quem NÃO pode cadastrar secrets no Cloudflare: crie um fluxo no ActivePieces com o
+                código pronto (activepieces-cartao.js) e cole a URL aqui. O site envia a sacola, o fluxo lê o Access
+                Token salvo AQUI no painel e devolve o link do Mercado Pago. Deixe vazio para usar o caminho padrão
+                (que exige secret no Cloudflare).
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-espresso/50 flex items-center gap-1.5">
+                <FiLink2 className="text-gold" size={11} /> Webhook de pagamento aprovado (Mercado Pago → ActivePieces)
+              </label>
+              <input
+                value={form.mercadoPagoWebhookPago}
+                onChange={(e) => set("mercadoPagoWebhookPago", e.target.value)}
+                className={campoClasse}
+                placeholder="https://cloud.activepieces.com/api/v1/webhooks/..."
+                data-testid="admin-pagamentos-mp-webhook-pago"
+              />
+              <p className="text-[10px] text-espresso/40">
+                Faz o pedido virar "Pago" sozinho quando o cartão é aprovado (igual ao Pix). Fluxo com o código
+                activepieces-mp-pago.js. A URL é embutida automaticamente em cada link de pagamento criado — não
+                precisa cadastrar no Mercado Pago.
+              </p>
+            </div>
             <button
               onClick={testarToken}
               disabled={testando || !form.mercadoPagoAccessToken.trim()}
@@ -219,7 +258,7 @@ export default function AbaPagamentos({ config }) {
                   ? `O servidor consegue ler o token salvo (fonte: ${ROTULO_FONTE[statusServidor.fonte] || statusServidor.fonte}). O pagamento com cartão pode funcionar.`
                   : statusServidor.erro
                   ? "Não foi possível consultar o servidor agora."
-                  : "O servidor NÃO consegue ler o token salvo aqui — por isso o cartão falha mesmo com o token preenchido. No Cloudflare › Settings › Variables and Secrets, cadastre FIREBASE_SERVICE_ACCOUNT (JSON da chave de serviço) OU FIREBASE_SYSTEM_EMAIL + FIREBASE_SYSTEM_PASS (o mesmo usuário de sistema do fluxo ActivePieces) e publique de novo. Veja o passo a passo no README-DEPLOY, seção 5."}
+                  : "O servidor NÃO consegue ler o token salvo aqui — sem isso o caminho padrão do cartão falha. SEM cadastrar nada no Cloudflare: use os fluxos do ActivePieces (códigos prontos activepieces-cartao.js e activepieces-mp-pago.js) e cole as URLs nos dois campos acima — o cartão funciona igual. Ou, se um dia puder, cadastre FIREBASE_SERVICE_ACCOUNT (ou FIREBASE_SYSTEM_EMAIL + FIREBASE_SYSTEM_PASS) no Cloudflare. Passo a passo no README-DEPLOY, seção 5."}
               </p>
             </div>
             <div className="flex items-start gap-2 bg-gold/10 border border-gold/30 rounded-xl p-3">
