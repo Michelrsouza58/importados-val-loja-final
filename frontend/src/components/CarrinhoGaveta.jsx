@@ -188,6 +188,12 @@ export default function CarrinhoGaveta() {
     return { nsu, itensAjustados, valorTotalAjustado, pedidoKey: pedidoCriadoKey, encomendaPath: encomendaCriadaPath, cupomAtivo };
   };
 
+  // URL do webhook salva em Admin > Pagamentos ("URL ActivePieces"). Só https é aceita.
+  const webhookInfinitePay = () => {
+    const urlWebhook = String(config.pagamentos.infinitepayWebhookUrl || "").trim();
+    return /^https:\/\/\S+$/i.test(urlWebhook) ? { webhook_url: urlWebhook } : {};
+  };
+
   const pagarPix = async () => {
     setProcessando("pix");
     try {
@@ -204,6 +210,14 @@ export default function CarrinhoGaveta() {
 
       const handle = config.pagamentos.infinitepayHandle || "michelrsouza";
       const webhookN8n = config.pagamentos.infinitepayWebhookN8n;
+      // A InfinitePay só chama o webhook se a URL for enviada NA CRIAÇÃO de cada link (campo webhook_url).
+      const payloadLink = {
+        handle,
+        redirect_url: window.location.origin + "/meus-pedidos",
+        order_nsu: compra.nsu,
+        items,
+        ...webhookInfinitePay(),
+      };
 
       let url = null;
       if (webhookN8n) {
@@ -211,7 +225,7 @@ export default function CarrinhoGaveta() {
           const resposta = await fetch(webhookN8n, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ handle, redirect_url: window.location.origin + "/meus-pedidos", order_nsu: compra.nsu, items }),
+            body: JSON.stringify(payloadLink),
           });
           const dados = await resposta.json();
           url = (dados && (dados.url || (dados.body && dados.body.url) || (dados.data && dados.data.url))) || null;
@@ -224,7 +238,7 @@ export default function CarrinhoGaveta() {
         const resposta = await fetch(API_INFINITEPAY, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ handle, redirect_url: window.location.origin + "/meus-pedidos", order_nsu: compra.nsu, items }),
+          body: JSON.stringify(payloadLink),
         });
         if (!resposta.ok) throw new Error("InfinitePay recusou o checkout");
         const dados = await resposta.json();
@@ -257,7 +271,6 @@ export default function CarrinhoGaveta() {
       const compra = await registrarPedidos("cartao");
       if (!compra) return;
 
-      let caiuParaInfinitePay = false;
       try {
         const resposta = await fetch(`${apiBase}/api/mercadopago/create-preference`, {
           method: "POST",
@@ -296,37 +309,17 @@ export default function CarrinhoGaveta() {
           toast.error(mensagem || "Não foi possível iniciar o pagamento com cartão.");
           return;
         }
-        caiuParaInfinitePay = true;
-        // Mercado Pago ainda não configurado: o checkout da InfinitePay também aceita cartão
+        // Mercado Pago ainda não configurado. A InfinitePay da loja é SOMENTE Pix,
+        // então não redirecionamos o cartão para lá: cancela o registro e orienta a cliente.
         try {
-          const correcao = { MetodoPagamento: "Cartão — InfinitePay" };
+          const correcao = { Status: "Cancelado", MotivoCancelamento: "Cartão indisponível (Mercado Pago não configurado)" };
           if (compra.pedidoKey) await update(ref(db, `pedidos/${compra.pedidoKey}`), correcao);
           if (compra.encomendaPath) await update(ref(db, compra.encomendaPath), correcao);
         } catch (e) {}
-        toast.info("Mercado Pago ainda não configurado — seguindo com cartão via InfinitePay.");
+        toast.error("Pagamento com cartão indisponível no momento. Por favor, finalize com Pix.");
+        setMetodo("pix");
+        return;
       }
-
-      const nomeItem = (i) => (i.Variante ? `${i.Nome} - ${i.Variante}` : i.Nome).toUpperCase();
-      const items = compra.itensAjustados.map((i) => ({
-        name: nomeItem(i),
-        description: nomeItem(i),
-        price: Math.round(i.PrecoReal * (1 - descontoPix / 100) * 100),
-        quantity: i.Quantidade,
-      }));
-      const handle = config.pagamentos.infinitepayHandle || "michelrsouza";
-      const resposta = await fetch(API_INFINITEPAY, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ handle, redirect_url: window.location.origin + "/meus-pedidos", order_nsu: compra.nsu, items }),
-      });
-      if (!resposta.ok) throw new Error("InfinitePay recusou o checkout");
-      const dados = await resposta.json();
-      const url = dados.url || dados.checkout_url || null;
-      if (!url) throw new Error("Sem URL de checkout");
-
-      itensAtivos.forEach((i) => removerDoCarrinho(i));
-      setCarrinhoAberto(false);
-      window.location.href = url;
     } catch (erro) {
       toast.error(erro.message || "Não foi possível iniciar o pagamento com cartão.");
     } finally {

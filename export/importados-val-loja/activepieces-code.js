@@ -38,6 +38,7 @@ export const code = async (inputs) => {
 
   const agora = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "medium", timeZone: "America/Sao_Paulo" }).format(new Date());
   const transacao = String(dados.transaction_nsu || "").slice(0, 80);
+  const slug = String(dados.invoice_slug || dados.slug || "").slice(0, 80); // a InfinitePay envia "invoice_slug"
   let atualizados = 0;
 
   // 2. Pedidos de pronta entrega (consulta indexada por NumeroPedidoLimpo)
@@ -48,7 +49,7 @@ export const code = async (inputs) => {
       await fetch(`${DB}/pedidos/${chave}.json${auth}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ Status: "Pago", PagoEm: agora, "PagamentoInfinitePay/transaction_nsu": transacao }),
+        body: JSON.stringify({ Status: "Pago", PagoEm: agora, "PagamentoInfinitePay/transaction_nsu": transacao, "PagamentoInfinitePay/slug": slug }),
       });
       atualizados++;
     }
@@ -64,7 +65,7 @@ export const code = async (inputs) => {
         await fetch(`${DB}/encomendas/${uid}/${lote}.json${auth}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ Status: "Pago", PagoEm: agora, "PagamentoInfinitePay/transaction_nsu": transacao }),
+          body: JSON.stringify({ Status: "Pago", PagoEm: agora, "PagamentoInfinitePay/transaction_nsu": transacao, "PagamentoInfinitePay/slug": slug }),
         });
         atualizados++;
       }
