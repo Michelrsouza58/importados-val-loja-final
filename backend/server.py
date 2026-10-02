@@ -388,7 +388,7 @@ async def notificar_pedido(req: NotificarPedidoRequest):
 
 # ─── CONFIRMAÇÃO AUTOMÁTICA DE PAGAMENTOS ───
 
-INFINITEPAY_HANDLE = os.environ.get("INFINITEPAY_HANDLE", "")
+INFINITEPAY_HANDLE = os.environ.get("INFINITEPAY_HANDLE", "") or "michelrsouza"  # handle público da loja
 
 
 def _limpar_id(valor: str, limite: int = 64) -> str:

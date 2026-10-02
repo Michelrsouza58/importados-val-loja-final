@@ -229,7 +229,7 @@ export default function MeusPedidos() {
         (p.Status || "") === "Aguardando Pagamento" &&
         String(p.MetodoPagamento || "").includes("InfinitePay") &&
         p.PagamentoInfinitePay &&
-        p.PagamentoInfinitePay.slug
+        (p.PagamentoInfinitePay.slug || p.PagamentoInfinitePay.transaction_nsu || p.PagamentoInfinitePay.order_nsu)
     );
     if (pendentes.length === 0) return;
 

@@ -283,9 +283,22 @@ export default function CarrinhoGaveta() {
           orderNsu: compra.nsu,
         };
 
-        // Sem secrets no Cloudflare? Um fluxo do ActivePieces cria o pagamento:
-        // lê o Access Token salvo no painel (Firebase) e devolve { url }.
+        // Lê a resposta com segurança: endpoints externos podem responder vazio
+        // (ex.: fluxo ActivePieces sem passo "Respond to Webhook") e isso não pode
+        // estourar um erro críptico de JSON para a cliente.
+        const jsonSeguro = async (resposta) => {
+          try {
+            const texto = await resposta.text();
+            return texto ? JSON.parse(texto) : null;
+          } catch (e) {
+            return null;
+          }
+        };
+
+        // Prioridade: fluxo ActivePieces (mais seguro) → criação no navegador com o
+        // token do painel (igual ao mr eletricista) → função do servidor (se houver secret).
         const webhookCriar = String(config.pagamentos.mercadoPagoWebhookCriar || "").trim();
+        const tokenNoPainel = String(config.pagamentos.mercadoPagoAccessToken || "").trim();
         let initPoint = null;
         if (/^https:\/\//i.test(webhookCriar)) {
           const respostaFluxo = await fetch(webhookCriar, {
@@ -293,25 +306,59 @@ export default function CarrinhoGaveta() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(corpoMP),
           });
-          const dadosFluxo = await respostaFluxo.json();
+          const dadosFluxo = await jsonSeguro(respostaFluxo);
+          if (!dadosFluxo) {
+            throw new Error(
+              "O fluxo do ActivePieces respondeu vazio. Adicione no fim do fluxo o passo 'Respond to Webhook' devolvendo o resultado do Code (passo a passo no activepieces-fluxo.md)."
+            );
+          }
           initPoint =
-            (dadosFluxo &&
-              (dadosFluxo.url ||
-                dadosFluxo.initPoint ||
-                dadosFluxo.init_point ||
-                (dadosFluxo.body && dadosFluxo.body.url) ||
-                (dadosFluxo.data && dadosFluxo.data.url))) ||
+            dadosFluxo.url ||
+            dadosFluxo.initPoint ||
+            dadosFluxo.init_point ||
+            (dadosFluxo.body && dadosFluxo.body.url) ||
+            (dadosFluxo.data && dadosFluxo.data.url) ||
             null;
           if (!initPoint) throw new Error("O fluxo do ActivePieces respondeu, mas sem o link de pagamento.");
+        } else if (tokenNoPainel) {
+          const respostaMP = await fetch("https://api.mercadopago.com/checkout/preferences", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${tokenNoPainel}`,
+            },
+            body: JSON.stringify({
+              items: corpoMP.items.map((i) => ({ ...i, currency_id: "BRL" })),
+              external_reference: corpoMP.orderNsu,
+              back_urls: {
+                success: `${corpoMP.origin}/meus-pedidos`,
+                failure: `${corpoMP.origin}/meus-pedidos`,
+                pending: `${corpoMP.origin}/meus-pedidos`,
+              },
+              auto_return: "approved",
+              payment_methods: {
+                installments: Number(config.financeiro.maxParcelas) || 12,
+                default_installments: 1,
+              },
+              ...(corpoMP.payerEmail ? { payer: { email: corpoMP.payerEmail } } : {}),
+            }),
+          });
+          const mp = await jsonSeguro(respostaMP);
+          initPoint = (mp && (mp.init_point || mp.sandbox_init_point)) || null;
+          if (!initPoint) {
+            throw new Error(
+              "Mercado Pago recusou o pagamento. Verifique o Access Token no painel (botão Testar credenciais)."
+            );
+          }
         } else {
           const resposta = await fetch(`${apiBase}/api/mercadopago/create-preference`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(corpoMP),
           });
-          const dados = await resposta.json();
-          if (!resposta.ok || !dados.initPoint) {
-            throw new Error(dados.error || "Falha ao iniciar pagamento");
+          const dados = await jsonSeguro(resposta);
+          if (!resposta.ok || !dados || !dados.initPoint) {
+            throw new Error((dados && dados.error) || "Falha ao iniciar o pagamento com cartão. Tente novamente.");
           }
           initPoint = dados.initPoint;
         }
