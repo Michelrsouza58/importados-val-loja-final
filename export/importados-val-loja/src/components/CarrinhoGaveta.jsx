@@ -10,7 +10,7 @@ import { useConfiguracoes, listaAdmins } from "../lib/configuracoes";
 import { buscarCupom, registrarUsoCupom, calcularDescontoCupom } from "../lib/cupons";
 import { brl } from "../lib/formato";
 import apiBase from "../lib/apiBase";
-import { FiX, FiPlus, FiMinus, FiTrash2, FiCreditCard, FiChevronRight, FiTag } from "react-icons/fi";
+import { FiX, FiPlus, FiMinus, FiTrash2, FiCreditCard, FiChevronRight, FiTag, FiZap, FiArrowLeft, FiCheckCircle } from "react-icons/fi";
 
 const API_INFINITEPAY = "https://api.checkout.infinitepay.io/links";
 
@@ -18,6 +18,8 @@ export default function CarrinhoGaveta() {
   const navigate = useNavigate();
   const [processando, setProcessando] = useState(null);
   const [selecionados, setSelecionados] = useState({});
+  const [etapa, setEtapa] = useState("carrinho"); // carrinho | pagamento
+  const [metodo, setMetodo] = useState("pix");
   const [cupomInput, setCupomInput] = useState("");
   const [cupomAplicado, setCupomAplicado] = useState(null);
   const [cupomErro, setCupomErro] = useState("");
@@ -41,6 +43,10 @@ export default function CarrinhoGaveta() {
     setSelecionados(novos);
   }, [carrinho]);
 
+  useEffect(() => {
+    if (!carrinhoAberto) setEtapa("carrinho");
+  }, [carrinhoAberto]);
+
   if (!carrinhoAberto) return null;
 
   const toggleSelecao = (item) => {
@@ -51,12 +57,13 @@ export default function CarrinhoGaveta() {
   const itensAtivos = carrinho.filter((i) => selecionados[`${i.Id}__${i.varianteId || "base"}`] !== false);
   const subtotal = itensAtivos.reduce((s, i) => s + i.precoUnit * i.quantidadeCarrinho, 0);
 
-  const descontoPix = Number(config.financeiro.descontoPix || 0);
-  const descontoCupomVal = calcularDescontoCupom(cupomAplicado, subtotal);
+  // O cupom só vale para pagamento via Pix
+  const cupomValido = metodo === "pix" ? cupomAplicado : null;
+  const descontoCupomVal = calcularDescontoCupom(cupomValido, subtotal);
   const subtotalComCupom = subtotal - descontoCupomVal;
-  const fatorDesconto = subtotal > 0 ? subtotalComCupom / subtotal : 1;
-  const totalPix = subtotalComCupom * (1 - descontoPix / 100);
+  const totalPix = subtotalComCupom * (1 - Number(config.financeiro.descontoPix || 0) / 100);
   const totalCartao = subtotalComCupom;
+  const descontoPix = Number(config.financeiro.descontoPix || 0);
   const maxParcelas = Number(config.financeiro.maxParcelas || 12);
 
   const aplicarCupom = async () => {
@@ -82,7 +89,7 @@ export default function CarrinhoGaveta() {
     setCupomErro("");
   };
 
-  const registrarPedidos = async (metodo) => {
+  const registrarPedidos = async (metodoEscolhido) => {
     const usuario = auth.currentUser;
     if (!usuario) {
       toast.error("Entre com sua conta para finalizar a compra");
@@ -94,7 +101,11 @@ export default function CarrinhoGaveta() {
       return null;
     }
 
-    const precoAjustado = (i) => Math.round(i.precoUnit * fatorDesconto * 100) / 100;
+    const cupomAtivo = metodoEscolhido === "pix" ? cupomAplicado : null;
+    const descontoCupomDoMetodo = calcularDescontoCupom(cupomAtivo, subtotal);
+    const fator = subtotal > 0 ? (subtotal - descontoCupomDoMetodo) / subtotal : 1;
+
+    const precoAjustado = (i) => Math.round(i.precoUnit * fator * 100) / 100;
     const itensDe = (lista) => lista.map((i) => ({
       Id: i.Id,
       Nome: i.Nome,
@@ -124,9 +135,9 @@ export default function CarrinhoGaveta() {
           NumeroPedidoLimpo: idLimpo,
           UsuarioId: usuario.uid,
           UsuarioEmail: usuario.email,
-          MetodoPagamento: metodo,
-          Cupom: cupomAplicado ? cupomAplicado.Codigo : null,
-          ValorCupom: Math.round(descontoCupomVal * 100) / 100,
+          MetodoPagamento: metodoEscolhido === "pix" ? "InfinitePay Pix" : "Mercado Pago",
+          Cupom: cupomAtivo ? cupomAtivo.Codigo : null,
+          ValorCupom: Math.round(descontoCupomDoMetodo * 100) / 100,
           Itens: itensDe(pronta),
           ValorTotal: Math.round(pronta.reduce((s, i) => s + precoAjustado(i) * i.quantidadeCarrinho, 0) * 100) / 100,
           DataPedido: new Date().toLocaleDateString("pt-BR"),
@@ -140,21 +151,22 @@ export default function CarrinhoGaveta() {
         await set(loteRef, {
           LoteId: loteRef.key,
           UsuarioEmail: usuario.email,
-          MetodoPagamento: metodo,
-          Cupom: cupomAplicado ? cupomAplicado.Codigo : null,
-          ValorCupom: Math.round(descontoCupomVal * 100) / 100,
+          MetodoPagamento: metodoEscolhido === "pix" ? "InfinitePay Pix" : "Mercado Pago",
+          Cupom: cupomAtivo ? cupomAtivo.Codigo : null,
+          ValorCupom: Math.round(descontoCupomDoMetodo * 100) / 100,
           DataEncomenda: new Date().toLocaleDateString("pt-BR"),
           HoraEncomenda: new Date().toLocaleTimeString("pt-BR"),
           Status: "Aguardando Pagamento",
           Itens: itensDe(encomenda),
         });
-        nsu = (loteRef.key || nsu).replace(/[^a-zA-Z0-9]/g, "");
         encomendaCriadaPath = `encomendas/${usuario.uid}/${loteRef.key}`;
+        nsu = (loteRef.key || nsu).replace(/[^a-zA-Z0-9]/g, "");
       }
     } catch (erro) {
-      toast.error("Falha ao registrar o pedido. Verifique sua conexão e tente novamente.");
+      toast.error(`Falha ao registrar o pedido: ${String((erro && (erro.code || erro.message)) || erro).slice(0, 90)}. Se for "permission denied", aplique as regras do README.`);
       return null;
     }
+
     // Avisa as administradoras por e-mail (melhor esforço, sem bloquear o pagamento)
     try {
       fetch(`${apiBase}/api/emails/pedido`, {
@@ -167,19 +179,19 @@ export default function CarrinhoGaveta() {
           admins: listaAdmins(config),
           itens: itensAjustados,
           total: valorTotalAjustado,
-          cupom: cupomAplicado ? cupomAplicado.Codigo : "",
+          cupom: cupomAtivo ? cupomAtivo.Codigo : "",
           dataHora: new Date().toLocaleString("pt-BR"),
         }),
       }).catch(() => {});
     } catch (e) {}
 
-    return { nsu, itensAjustados, valorTotalAjustado, pedidoKey: pedidoCriadoKey, encomendaPath: encomendaCriadaPath };
+    return { nsu, itensAjustados, valorTotalAjustado, pedidoKey: pedidoCriadoKey, encomendaPath: encomendaCriadaPath, cupomAtivo };
   };
 
   const pagarPix = async () => {
     setProcessando("pix");
     try {
-      const compra = await registrarPedidos("InfinitePay Pix");
+      const compra = await registrarPedidos("pix");
       if (!compra) return;
 
       const nomeItem = (i) => (i.Variante ? `${i.Nome} - ${i.Variante}` : i.Nome).toUpperCase();
@@ -195,14 +207,20 @@ export default function CarrinhoGaveta() {
 
       let url = null;
       if (webhookN8n) {
-        const resposta = await fetch(webhookN8n, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ handle, redirect_url: window.location.origin + "/meus-pedidos", order_nsu: compra.nsu, items }),
-        });
-        const dados = await resposta.json();
-        url = (dados && (dados.url || (dados.body && dados.body.url) || (dados.data && dados.data.url))) || null;
-      } else {
+        try {
+          const resposta = await fetch(webhookN8n, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ handle, redirect_url: window.location.origin + "/meus-pedidos", order_nsu: compra.nsu, items }),
+          });
+          const dados = await resposta.json();
+          url = (dados && (dados.url || (dados.body && dados.body.url) || (dados.data && dados.data.url))) || null;
+        } catch (e) {
+          url = null;
+        }
+      }
+      if (!url) {
+        // Direto na InfinitePay (o caminho padrão)
         const resposta = await fetch(API_INFINITEPAY, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -211,25 +229,19 @@ export default function CarrinhoGaveta() {
         if (!resposta.ok) throw new Error("InfinitePay recusou o checkout");
         const dados = await resposta.json();
         url = dados.url || dados.checkout_url || null;
-        // Guarda os identificadores do pagamento no pedido para confirmar depois
-        if (url) {
-          try {
-            const ids = {
-              order_nsu: compra.nsu,
-              slug: dados.slug || dados.invoice_slug || "",
-              transaction_nsu: dados.transaction_nsu || "",
-              salvoEm: Date.now(),
-            };
-            if (compra.pedidoKey) await update(ref(db, `pedidos/${compra.pedidoKey}`), { PagamentoInfinitePay: ids });
-            if (compra.encomendaPath) await update(ref(db, compra.encomendaPath), { PagamentoInfinitePay: ids });
-          } catch (e) {}
-        }
       }
-
       if (!url) throw new Error("Sem URL de checkout");
 
+      // Guarda os identificadores do pagamento no pedido para confirmar depois
+      try {
+        const dadosLink = null;
+        const ids = { order_nsu: compra.nsu, slug: "", transaction_nsu: "", salvoEm: Date.now() };
+        if (compra.pedidoKey) await update(ref(db, `pedidos/${compra.pedidoKey}`), { PagamentoInfinitePay: ids });
+        if (compra.encomendaPath) await update(ref(db, compra.encomendaPath), { PagamentoInfinitePay: ids });
+      } catch (e) {}
+
       itensAtivos.forEach((i) => removerDoCarrinho(i));
-      await registrarUsoCupom(cupomAplicado ? cupomAplicado.Key : null);
+      await registrarUsoCupom(compra.cupomAtivo ? compra.cupomAtivo.Key : null);
       setCarrinhoAberto(false);
       window.location.href = url;
     } catch (erro) {
@@ -242,7 +254,7 @@ export default function CarrinhoGaveta() {
   const pagarCartao = async () => {
     setProcessando("cartao");
     try {
-      const compra = await registrarPedidos("Mercado Pago");
+      const compra = await registrarPedidos("cartao");
       if (!compra) return;
 
       let caiuParaInfinitePay = false;
@@ -274,7 +286,6 @@ export default function CarrinhoGaveta() {
         } catch (e) {}
 
         itensAtivos.forEach((i) => removerDoCarrinho(i));
-        await registrarUsoCupom(cupomAplicado ? cupomAplicado.Key : null);
         setCarrinhoAberto(false);
         window.location.assign(dados.initPoint);
         return;
@@ -303,31 +314,17 @@ export default function CarrinhoGaveta() {
         quantity: i.Quantidade,
       }));
       const handle = config.pagamentos.infinitepayHandle || "michelrsouza";
-      const webhookN8n = config.pagamentos.infinitepayWebhookN8n;
-
-      let url = null;
-      if (webhookN8n) {
-        const resposta = await fetch(webhookN8n, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ handle, redirect_url: window.location.origin + "/meus-pedidos", order_nsu: compra.nsu, items }),
-        });
-        const dados = await resposta.json();
-        url = (dados && (dados.url || (dados.body && dados.body.url) || (dados.data && dados.data.url))) || null;
-      } else {
-        const resposta = await fetch(API_INFINITEPAY, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ handle, redirect_url: window.location.origin + "/meus-pedidos", order_nsu: compra.nsu, items }),
-        });
-        if (!resposta.ok) throw new Error("InfinitePay recusou o checkout");
-        const dados = await resposta.json();
-        url = dados.url || dados.checkout_url || null;
-      }
+      const resposta = await fetch(API_INFINITEPAY, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ handle, redirect_url: window.location.origin + "/meus-pedidos", order_nsu: compra.nsu, items }),
+      });
+      if (!resposta.ok) throw new Error("InfinitePay recusou o checkout");
+      const dados = await resposta.json();
+      const url = dados.url || dados.checkout_url || null;
       if (!url) throw new Error("Sem URL de checkout");
 
       itensAtivos.forEach((i) => removerDoCarrinho(i));
-      await registrarUsoCupom(cupomAplicado ? cupomAplicado.Key : null);
       setCarrinhoAberto(false);
       window.location.href = url;
     } catch (erro) {
@@ -336,6 +333,8 @@ export default function CarrinhoGaveta() {
       setProcessando(null);
     }
   };
+
+  const aoPagar = () => (metodo === "pix" ? pagarPix() : pagarCartao());
 
   return (
     <AnimatePresence>
@@ -353,164 +352,271 @@ export default function CarrinhoGaveta() {
             data-testid="sacola-painel"
           >
             <div className="p-5 border-b border-pessego/20 bg-white flex items-center justify-between">
-              <h2 className="text-sm font-bold uppercase tracking-[0.2em] text-espresso" data-testid="sacola-titulo">
-                Sua Sacola ({carrinho.length})
-              </h2>
+              <div className="flex items-center gap-3">
+                {etapa === "pagamento" && (
+                  <button onClick={() => setEtapa("carrinho")} className="p-1.5 rounded-full hover:bg-creme text-espresso" aria-label="Voltar para a sacola" data-testid="checkout-voltar-botao">
+                    <FiArrowLeft size={17} />
+                  </button>
+                )}
+                <h2 className="text-sm font-bold uppercase tracking-[0.2em] text-espresso" data-testid="sacola-titulo">
+                  {etapa === "carrinho" ? `Sua Sacola (${carrinho.length})` : "Finalizar Compra"}
+                </h2>
+              </div>
               <button onClick={() => setCarrinhoAberto(false)} className="p-1.5 rounded-full hover:bg-creme text-espresso" aria-label="Fechar sacola" data-testid="sacola-fechar">
                 <FiX size={18} />
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-5 space-y-4">
-              {carrinho.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-center text-espresso/40 p-6" data-testid="sacola-vazia">
-                  <p className="font-display italic text-2xl text-espresso/30 mb-2">Sua sacola está vazia</p>
-                  <button onClick={() => { setCarrinhoAberto(false); navigate("/catalogo"); }} className="text-[11px] font-bold uppercase tracking-widest text-rose mt-2" data-testid="sacola-ver-catalogo">
-                    Ver catálogo
-                  </button>
-                </div>
-              ) : (
-                carrinho.map((item) => {
-                  const chave = `${item.Id}__${item.varianteId || "base"}`;
-                  const encomenda = Number(item.QuantidadeEstoque) <= 0;
-                  const marcado = selecionados[chave] !== false;
-                  return (
-                    <div
-                      key={chave}
-                      className={`flex items-center gap-3 bg-white p-3 rounded-2xl border shadow-sm transition-all ${
-                        marcado ? (encomenda ? "border-amber-200" : "border-pessego/40") : "border-espresso/5 opacity-60"
-                      }`}
-                      data-testid="sacola-item"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={marcado}
-                        onChange={() => toggleSelecao(item)}
-                        className="w-4 h-4 rounded-md accent-rose cursor-pointer"
-                        aria-label={`Selecionar ${item.Nome}`}
-                      />
-                      <div className="w-16 h-20 bg-creme rounded-xl overflow-hidden border border-espresso/5 shrink-0">
-                        {item.FotoUrl && <img src={item.FotoUrl} alt={item.Nome} className="w-full h-full object-cover" />}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h4 className="text-xs font-bold text-espresso uppercase tracking-wide truncate" data-testid="sacola-item-nome">
-                          {item.Nome}
-                          {item.varianteNome && <span className="text-rose"> · {item.varianteNome}</span>}
-                        </h4>
-                        <div className="flex items-center gap-2 mt-1">
-                          <p className="text-xs font-mono font-bold text-rose">{brl(item.precoUnit)}</p>
-                          {encomenda && (
-                            <span className="text-[8px] bg-amber-50 text-amber-700 font-bold px-1.5 py-0.5 rounded border border-amber-100 uppercase tracking-tighter">
-                              Encomenda
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-3 mt-2">
-                          <div className="flex items-center border border-pessego/30 rounded-full bg-creme">
-                            <button onClick={() => atualizarQuantidade(item, item.quantidadeCarrinho - 1)} className="px-2 py-1 text-espresso/50 hover:text-rose" aria-label="Diminuir quantidade" data-testid="sacola-item-diminuir">
-                              <FiMinus size={10} />
-                            </button>
-                            <span className="text-xs font-bold px-1 font-mono text-espresso">{item.quantidadeCarrinho}</span>
-                            <button onClick={() => atualizarQuantidade(item, item.quantidadeCarrinho + 1)} className="px-2 py-1 text-espresso/50 hover:text-rose" aria-label="Aumentar quantidade" data-testid="sacola-item-aumentar">
-                              <FiPlus size={10} />
-                            </button>
-                          </div>
-                          <button onClick={() => removerDoCarrinho(item)} className="text-espresso/25 hover:text-rose transition-colors" aria-label="Remover item" data-testid="sacola-item-remover">
-                            <FiTrash2 size={13} />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-
-            <div className="p-5 bg-white border-t border-pessego/20 shadow-sm space-y-3">
-              {cupomAplicado ? (
-                <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2.5" data-testid="sacola-cupom-ativo">
-                  <div className="flex items-center gap-2.5">
-                    <FiTag className="text-emerald-700" size={14} />
-                    <div>
-                      <p className="text-[10px] font-bold text-emerald-800 uppercase tracking-widest">Cupom {cupomAplicado.Codigo}</p>
-                      <p className="text-[10px] text-emerald-700">−{brl(descontoCupomVal)} de desconto</p>
-                    </div>
-                  </div>
-                  <button onClick={removerCupom} className="p-1.5 rounded-full hover:bg-emerald-100 text-emerald-700" aria-label="Remover cupom" data-testid="sacola-cupom-remover">
-                    <FiX size={14} />
-                  </button>
-                </div>
-              ) : (
-                <div>
-                  <div className="flex gap-2">
-                    <input
-                      value={cupomInput}
-                      onChange={(e) => setCupomInput(e.target.value.toUpperCase())}
-                      onKeyDown={(e) => e.key === "Enter" && aplicarCupom()}
-                      placeholder="Cupom de desconto"
-                      className="flex-1 px-4 py-2.5 bg-creme border border-pessego/30 rounded-xl focus:outline-none focus:border-rose text-xs font-mono uppercase text-espresso placeholder:normal-case placeholder:font-sans"
-                      data-testid="sacola-cupom-input"
-                    />
-                    <button
-                      onClick={aplicarCupom}
-                      disabled={aplicandoCupom || itensAtivos.length === 0}
-                      className="shrink-0 px-5 py-2.5 bg-espresso hover:bg-ink disabled:bg-espresso/20 text-creme rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all"
-                      data-testid="sacola-cupom-aplicar"
-                    >
-                      {aplicandoCupom ? "..." : "Aplicar"}
+            {/* ─── ETAPA 1: CARRINHO ─── */}
+            {etapa === "carrinho" && (
+              <div className="flex-1 overflow-y-auto p-5 space-y-4">
+                {carrinho.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-center text-espresso/40 p-6" data-testid="sacola-vazia">
+                    <p className="font-display italic text-2xl text-espresso/30 mb-2">Sua sacola está vazia</p>
+                    <button onClick={() => { setCarrinhoAberto(false); navigate("/catalogo"); }} className="text-[11px] font-bold uppercase tracking-widest text-rose mt-2" data-testid="sacola-ver-catalogo">
+                      Ver catálogo
                     </button>
                   </div>
-                  {cupomErro && <p className="text-[10px] text-rose mt-1.5 font-semibold" data-testid="sacola-cupom-erro">{cupomErro}</p>}
-                </div>
-              )}
-
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase tracking-widest text-espresso/50">Subtotal</span>
-                <span className="text-lg font-display font-black text-rose" data-testid="sacola-subtotal">{brl(subtotal)}</span>
+                ) : (
+                  carrinho.map((item) => {
+                    const chave = `${item.Id}__${item.varianteId || "base"}`;
+                    const encomenda = Number(item.QuantidadeEstoque) <= 0;
+                    const marcado = selecionados[chave] !== false;
+                    return (
+                      <div
+                        key={chave}
+                        className={`flex items-center gap-3 bg-white p-3 rounded-2xl border shadow-sm transition-all ${
+                          marcado ? (encomenda ? "border-amber-200" : "border-pessego/40") : "border-espresso/5 opacity-60"
+                        }`}
+                        data-testid="sacola-item"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={marcado}
+                          onChange={() => toggleSelecao(item)}
+                          className="w-4 h-4 rounded-md accent-rose cursor-pointer"
+                          aria-label={`Selecionar ${item.Nome}`}
+                        />
+                        <div className="w-16 h-20 bg-creme rounded-xl overflow-hidden border border-espresso/5 shrink-0">
+                          {item.FotoUrl && <img src={item.FotoUrl} alt={item.Nome} className="w-full h-full object-cover" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h4 className="text-xs font-bold text-espresso uppercase tracking-wide truncate" data-testid="sacola-item-nome">
+                            {item.Nome}
+                            {item.varianteNome && <span className="text-rose"> · {item.varianteNome}</span>}
+                          </h4>
+                          <div className="flex items-center gap-2 mt-1">
+                            <p className="text-xs font-mono font-bold text-rose">{brl(item.precoUnit)}</p>
+                            {encomenda && (
+                              <span className="text-[8px] bg-amber-50 text-amber-700 font-bold px-1.5 py-0.5 rounded border border-amber-100 uppercase tracking-tighter">
+                                Encomenda
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3 mt-2">
+                            <div className="flex items-center border border-pessego/30 rounded-full bg-creme">
+                              <button onClick={() => atualizarQuantidade(item, item.quantidadeCarrinho - 1)} className="px-2 py-1 text-espresso/50 hover:text-rose" aria-label="Diminuir quantidade" data-testid="sacola-item-diminuir">
+                                <FiMinus size={10} />
+                              </button>
+                              <span className="text-xs font-bold px-1 font-mono text-espresso">{item.quantidadeCarrinho}</span>
+                              <button onClick={() => atualizarQuantidade(item, item.quantidadeCarrinho + 1)} className="px-2 py-1 text-espresso/50 hover:text-rose" aria-label="Aumentar quantidade" data-testid="sacola-item-aumentar">
+                                <FiPlus size={10} />
+                              </button>
+                            </div>
+                            <button onClick={() => removerDoCarrinho(item)} className="text-espresso/25 hover:text-rose transition-colors" aria-label="Remover item" data-testid="sacola-item-remover">
+                              <FiTrash2 size={13} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
               </div>
-              {descontoCupomVal > 0 && (
-                <div className="flex items-center justify-between text-[11px] text-emerald-700" data-testid="sacola-linha-cupom">
-                  <span className="uppercase tracking-widest font-semibold">Cupom {cupomAplicado.Codigo}</span>
-                  <span className="font-mono font-bold">−{brl(descontoCupomVal)}</span>
+            )}
+
+            {/* ─── ETAPA 2: PAGAMENTO ─── */}
+            {etapa === "pagamento" && (
+              <div className="flex-1 overflow-y-auto p-5 space-y-5">
+                <div className="space-y-2" data-testid="checkout-resumo-itens">
+                  {itensAtivos.map((item) => {
+                    const chave = `${item.Id}__${item.varianteId || "base"}`;
+                    return (
+                      <div key={chave} className="flex items-center gap-3 bg-white border border-espresso/5 rounded-xl px-3 py-2">
+                        <div className="w-9 h-11 bg-creme rounded-lg overflow-hidden border border-espresso/5 shrink-0">
+                          {item.FotoUrl && <img src={item.FotoUrl} alt={item.Nome} className="w-full h-full object-cover" />}
+                        </div>
+                        <p className="flex-1 text-[10px] font-bold text-espresso uppercase tracking-wide truncate">
+                          {item.quantidadeCarrinho}x {item.Nome}
+                          {item.varianteNome && <span className="text-rose"> · {item.varianteNome}</span>}
+                        </p>
+                        <span className="text-[11px] font-mono text-espresso/50 shrink-0">
+                          {brl(item.precoUnit * item.quantidadeCarrinho)}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
-              )}
-              {descontoPix > 0 && (
-                <div className="flex items-center justify-between text-[11px] text-emerald-700">
-                  <span className="uppercase tracking-widest font-semibold">No Pix ({descontoPix}% off)</span>
-                  <span className="font-mono font-bold" data-testid="sacola-subtotal-pix">{brl(totalPix)}</span>
+
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-espresso/40 mb-2.5">Forma de pagamento</p>
+                  <div className="space-y-2.5">
+                    <button
+                      onClick={() => setMetodo("pix")}
+                      className={`w-full flex items-center gap-3 p-4 rounded-2xl border-2 text-left transition-all ${metodo === "pix" ? "border-rose bg-rose/5 shadow-sm" : "border-espresso/10 bg-white hover:border-pessego"}`}
+                      data-testid="checkout-metodo-pix"
+                    >
+                      <span className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${metodo === "pix" ? "bg-rose text-white" : "bg-creme text-espresso/50"}`}>
+                        <FiZap size={16} />
+                      </span>
+                      <span className="flex-1">
+                        <span className="block text-xs font-bold text-espresso uppercase tracking-wide">Pix · InfinitePay</span>
+                        <span className="block text-[10px] text-espresso/45 mt-0.5">
+                          {descontoPix > 0 ? `Com ${descontoPix}% de desconto · aprovação imediata` : "Aprovação imediata"}
+                        </span>
+                      </span>
+                      {metodo === "pix" && <FiCheckCircle className="text-rose shrink-0" size={16} />}
+                    </button>
+
+                    <button
+                      onClick={() => setMetodo("cartao")}
+                      className={`w-full flex items-center gap-3 p-4 rounded-2xl border-2 text-left transition-all ${metodo === "cartao" ? "border-rose bg-rose/5 shadow-sm" : "border-espresso/10 bg-white hover:border-pessego"}`}
+                      data-testid="checkout-metodo-cartao"
+                    >
+                      <span className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${metodo === "cartao" ? "bg-rose text-white" : "bg-creme text-espresso/50"}`}>
+                        <FiCreditCard size={16} />
+                      </span>
+                      <span className="flex-1">
+                        <span className="block text-xs font-bold text-espresso uppercase tracking-wide">Cartão · Mercado Pago</span>
+                        <span className="block text-[10px] text-espresso/45 mt-0.5">Até {maxParcelas}x no cartão de crédito</span>
+                      </span>
+                      {metodo === "cartao" && <FiCheckCircle className="text-rose shrink-0" size={16} />}
+                    </button>
+                  </div>
                 </div>
+
+                {metodo === "pix" ? (
+                  cupomAplicado ? (
+                    <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2.5" data-testid="sacola-cupom-ativo">
+                      <div className="flex items-center gap-2.5">
+                        <FiTag className="text-emerald-700" size={14} />
+                        <div>
+                          <p className="text-[10px] font-bold text-emerald-800 uppercase tracking-widest">Cupom {cupomAplicado.Codigo}</p>
+                          <p className="text-[10px] text-emerald-700">−{brl(descontoCupomVal)} de desconto no Pix</p>
+                        </div>
+                      </div>
+                      <button onClick={removerCupom} className="p-1.5 rounded-full hover:bg-emerald-100 text-emerald-700" aria-label="Remover cupom" data-testid="sacola-cupom-remover">
+                        <FiX size={14} />
+                      </button>
+                    </div>
+                  ) : (
+                    <div>
+                      <div className="flex gap-2">
+                        <input
+                          value={cupomInput}
+                          onChange={(e) => setCupomInput(e.target.value.toUpperCase())}
+                          onKeyDown={(e) => e.key === "Enter" && aplicarCupom()}
+                          placeholder="Cupom de desconto (só no Pix)"
+                          className="flex-1 px-4 py-2.5 bg-white border border-pessego/30 rounded-xl focus:outline-none focus:border-rose text-xs font-mono uppercase text-espresso placeholder:normal-case placeholder:font-sans"
+                          data-testid="sacola-cupom-input"
+                        />
+                        <button
+                          onClick={aplicarCupom}
+                          disabled={aplicandoCupom || itensAtivos.length === 0}
+                          className="shrink-0 px-5 py-2.5 bg-espresso hover:bg-ink disabled:bg-espresso/20 text-creme rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all"
+                          data-testid="sacola-cupom-aplicar"
+                        >
+                          {aplicandoCupom ? "..." : "Aplicar"}
+                        </button>
+                      </div>
+                      {cupomErro && <p className="text-[10px] text-rose mt-1.5 font-semibold" data-testid="sacola-cupom-erro">{cupomErro}</p>}
+                    </div>
+                  )
+                ) : (
+                  <div className="flex items-center gap-2 bg-creme/70 border border-espresso/5 rounded-xl px-4 py-2.5" data-testid="checkout-cupom-indisponivel">
+                    <FiTag className="text-espresso/30 shrink-0" size={13} />
+                    <p className="text-[10px] text-espresso/45">
+                      {cupomAplicado
+                        ? `O cupom ${cupomAplicado.Codigo} vale apenas para pagamento via Pix.`
+                        : "Cupons são válidos apenas para pagamento via Pix."}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ─── RODAPÉ CONTEXTO-DEPENDENTE ─── */}
+            <div className="p-5 bg-white border-t border-pessego/20 shadow-sm space-y-3">
+              {etapa === "carrinho" ? (
+                <>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold uppercase tracking-widest text-espresso/50">Subtotal selecionado</span>
+                    <span className="text-lg font-display font-black text-rose" data-testid="sacola-subtotal">{brl(subtotal)}</span>
+                  </div>
+                  <button
+                    onClick={() => setEtapa("pagamento")}
+                    disabled={itensAtivos.length === 0}
+                    className="w-full bg-espresso hover:bg-ink disabled:bg-espresso/20 text-creme py-4 rounded-2xl text-xs font-bold uppercase tracking-[0.25em] transition-all shadow-md"
+                    data-testid="sacola-comprar-botao"
+                  >
+                    Comprar
+                  </button>
+                  <p className="text-center text-[9px] text-espresso/35 uppercase tracking-widest">
+                    Pix com {descontoPix > 0 ? `${descontoPix}% off` : "desconto"} · Cartão em até {maxParcelas}x
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px] text-espresso/50">
+                      <span className="uppercase tracking-widest font-semibold">Itens</span>
+                      <span className="font-mono">{brl(subtotal)}</span>
+                    </div>
+                    {metodo === "pix" && descontoCupomVal > 0 && (
+                      <div className="flex items-center justify-between text-[11px] text-emerald-700" data-testid="sacola-linha-cupom">
+                        <span className="uppercase tracking-widest font-semibold">Cupom {cupomAplicado.Codigo}</span>
+                        <span className="font-mono font-bold">−{brl(descontoCupomVal)}</span>
+                      </div>
+                    )}
+                    {metodo === "pix" && descontoPix > 0 && (
+                      <div className="flex items-center justify-between text-[11px] text-emerald-700">
+                        <span className="uppercase tracking-widest font-semibold">Desconto do Pix ({descontoPix}%)</span>
+                        <span className="font-mono font-bold">−{brl(subtotalComCupom - totalPix)}</span>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="text-xs font-semibold uppercase tracking-widest text-espresso/50">Total a pagar</span>
+                      <span className="text-xl font-display font-black text-rose" data-testid="checkout-total">
+                        {brl(metodo === "pix" ? totalPix : totalCartao)}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={aoPagar}
+                    disabled={itensAtivos.length === 0 || processando !== null}
+                    className={`w-full py-4 rounded-2xl text-xs font-bold uppercase tracking-[0.25em] transition-all shadow-md flex items-center justify-center gap-2 ${
+                      metodo === "pix" ? "bg-espresso hover:bg-ink text-creme" : "bg-rose hover:bg-rosedark text-white"
+                    } disabled:opacity-50`}
+                    data-testid="checkout-pagar-botao"
+                  >
+                    {processando ? (
+                      <span className="w-4 h-4 border-2 border-white/70 border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <>
+                        {metodo === "pix" ? (
+                          <><FiZap size={14} /> Pagar com Pix · {brl(totalPix)}</>
+                        ) : (
+                          <><FiCreditCard size={14} /> Pagar com Cartão · {brl(totalCartao)}</>
+                        )}
+                        <FiChevronRight size={14} />
+                      </>
+                    )}
+                  </button>
+                  <p className="text-center text-[9px] text-espresso/35 uppercase tracking-widest">
+                    {metodo === "pix" ? "Você será levada ao checkout seguro da InfinitePay" : "Você será levada ao checkout seguro do Mercado Pago"}
+                  </p>
+                </>
               )}
-              <button
-                onClick={pagarPix}
-                disabled={itensAtivos.length === 0 || processando !== null}
-                className="w-full bg-espresso hover:bg-ink disabled:bg-espresso/20 text-creme py-3.5 rounded-2xl text-[11px] font-bold uppercase tracking-[0.2em] transition-all shadow-md flex items-center justify-center gap-2"
-                data-testid="checkout-pix-botao"
-              >
-                {processando === "pix" ? (
-                  <span className="w-4 h-4 border-2 border-creme border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  <>
-                    Pagar com Pix · {brl(totalPix)} <FiChevronRight size={14} />
-                  </>
-                )}
-              </button>
-              <button
-                onClick={pagarCartao}
-                disabled={itensAtivos.length === 0 || processando !== null}
-                className="w-full bg-rose hover:bg-rosedark disabled:bg-rose/30 text-white py-3.5 rounded-2xl text-[11px] font-bold uppercase tracking-[0.2em] transition-all shadow-md flex items-center justify-center gap-2"
-                data-testid="checkout-cartao-botao"
-              >
-                {processando === "cartao" ? (
-                  <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  <>
-                    <FiCreditCard size={13} /> Pagar com Cartão · {brl(totalCartao)}
-                  </>
-                )}
-              </button>
-              <p className="text-center text-[9px] text-espresso/35 uppercase tracking-widest">
-                Cartão em até {maxParcelas}x · Pix via InfinitePay · Cartão via Mercado Pago
-              </p>
             </div>
           </motion.aside>
         </div>
