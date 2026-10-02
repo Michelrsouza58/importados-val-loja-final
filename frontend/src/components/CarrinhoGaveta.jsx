@@ -283,6 +283,18 @@ export default function CarrinhoGaveta() {
           orderNsu: compra.nsu,
         };
 
+        // Lê a resposta com segurança: endpoints externos podem responder vazio
+        // (ex.: fluxo ActivePieces sem passo "Respond to Webhook") e isso não pode
+        // estourar um erro críptico de JSON para a cliente.
+        const jsonSeguro = async (resposta) => {
+          try {
+            const texto = await resposta.text();
+            return texto ? JSON.parse(texto) : null;
+          } catch (e) {
+            return null;
+          }
+        };
+
         // Prioridade: fluxo ActivePieces (mais seguro) → criação no navegador com o
         // token do painel (igual ao mr eletricista) → função do servidor (se houver secret).
         const webhookCriar = String(config.pagamentos.mercadoPagoWebhookCriar || "").trim();
@@ -294,14 +306,18 @@ export default function CarrinhoGaveta() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(corpoMP),
           });
-          const dadosFluxo = await respostaFluxo.json();
+          const dadosFluxo = await jsonSeguro(respostaFluxo);
+          if (!dadosFluxo) {
+            throw new Error(
+              "O fluxo do ActivePieces respondeu vazio. Adicione no fim do fluxo o passo 'Respond to Webhook' devolvendo o resultado do Code (passo a passo no activepieces-fluxo.md)."
+            );
+          }
           initPoint =
-            (dadosFluxo &&
-              (dadosFluxo.url ||
-                dadosFluxo.initPoint ||
-                dadosFluxo.init_point ||
-                (dadosFluxo.body && dadosFluxo.body.url) ||
-                (dadosFluxo.data && dadosFluxo.data.url))) ||
+            dadosFluxo.url ||
+            dadosFluxo.initPoint ||
+            dadosFluxo.init_point ||
+            (dadosFluxo.body && dadosFluxo.body.url) ||
+            (dadosFluxo.data && dadosFluxo.data.url) ||
             null;
           if (!initPoint) throw new Error("O fluxo do ActivePieces respondeu, mas sem o link de pagamento.");
         } else if (tokenNoPainel) {
@@ -327,13 +343,11 @@ export default function CarrinhoGaveta() {
               ...(corpoMP.payerEmail ? { payer: { email: corpoMP.payerEmail } } : {}),
             }),
           });
-          const mp = await respostaMP.json();
-          initPoint = mp.init_point || mp.sandbox_init_point || null;
+          const mp = await jsonSeguro(respostaMP);
+          initPoint = (mp && (mp.init_point || mp.sandbox_init_point)) || null;
           if (!initPoint) {
             throw new Error(
-              respostaMP.ok
-                ? "Mercado Pago não devolveu o link de pagamento. Confira o Access Token no painel (botão Testar credenciais)."
-                : "Mercado Pago recusou o pagamento. Verifique o Access Token no painel (botão Testar credenciais)."
+              "Mercado Pago recusou o pagamento. Verifique o Access Token no painel (botão Testar credenciais)."
             );
           }
         } else {
@@ -342,9 +356,9 @@ export default function CarrinhoGaveta() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(corpoMP),
           });
-          const dados = await resposta.json();
-          if (!resposta.ok || !dados.initPoint) {
-            throw new Error(dados.error || "Falha ao iniciar pagamento");
+          const dados = await jsonSeguro(resposta);
+          if (!resposta.ok || !dados || !dados.initPoint) {
+            throw new Error((dados && dados.error) || "Falha ao iniciar o pagamento com cartão. Tente novamente.");
           }
           initPoint = dados.initPoint;
         }
