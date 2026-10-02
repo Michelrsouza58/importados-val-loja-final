@@ -283,9 +283,10 @@ export default function CarrinhoGaveta() {
           orderNsu: compra.nsu,
         };
 
-        // Sem secrets no Cloudflare? Um fluxo do ActivePieces cria o pagamento:
-        // lê o Access Token salvo no painel (Firebase) e devolve { url }.
+        // Prioridade: fluxo ActivePieces (mais seguro) → criação no navegador com o
+        // token do painel (igual ao mr eletricista) → função do servidor (se houver secret).
         const webhookCriar = String(config.pagamentos.mercadoPagoWebhookCriar || "").trim();
+        const tokenNoPainel = String(config.pagamentos.mercadoPagoAccessToken || "").trim();
         let initPoint = null;
         if (/^https:\/\//i.test(webhookCriar)) {
           const respostaFluxo = await fetch(webhookCriar, {
@@ -303,6 +304,38 @@ export default function CarrinhoGaveta() {
                 (dadosFluxo.data && dadosFluxo.data.url))) ||
             null;
           if (!initPoint) throw new Error("O fluxo do ActivePieces respondeu, mas sem o link de pagamento.");
+        } else if (tokenNoPainel) {
+          const respostaMP = await fetch("https://api.mercadopago.com/checkout/preferences", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${tokenNoPainel}`,
+            },
+            body: JSON.stringify({
+              items: corpoMP.items.map((i) => ({ ...i, currency_id: "BRL" })),
+              external_reference: corpoMP.orderNsu,
+              back_urls: {
+                success: `${corpoMP.origin}/meus-pedidos`,
+                failure: `${corpoMP.origin}/meus-pedidos`,
+                pending: `${corpoMP.origin}/meus-pedidos`,
+              },
+              auto_return: "approved",
+              payment_methods: {
+                installments: Number(config.financeiro.maxParcelas) || 12,
+                default_installments: 1,
+              },
+              ...(corpoMP.payerEmail ? { payer: { email: corpoMP.payerEmail } } : {}),
+            }),
+          });
+          const mp = await respostaMP.json();
+          initPoint = mp.init_point || mp.sandbox_init_point || null;
+          if (!initPoint) {
+            throw new Error(
+              respostaMP.ok
+                ? "Mercado Pago não devolveu o link de pagamento. Confira o Access Token no painel (botão Testar credenciais)."
+                : "Mercado Pago recusou o pagamento. Verifique o Access Token no painel (botão Testar credenciais)."
+            );
+          }
         } else {
           const resposta = await fetch(`${apiBase}/api/mercadopago/create-preference`, {
             method: "POST",
