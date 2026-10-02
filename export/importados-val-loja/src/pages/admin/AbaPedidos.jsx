@@ -1,9 +1,10 @@
 // src/pages/admin/AbaPedidos.jsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { db } from "../../lib/firebase";
 import { ref, onValue, update } from "firebase/database";
 import { toast } from "sonner";
 import { brl } from "../../lib/formato";
+import apiBase from "../../lib/apiBase";
 import { FiShoppingBag, FiBox, FiMinus, FiPlus, FiTrash2, FiSearch, FiStar } from "react-icons/fi";
 
 const STATUS = ["Aguardando Pagamento", "Pago", "Enviado", "Entregue", "Cancelado"];
@@ -76,6 +77,65 @@ export default function AbaPedidos() {
       unsubClientes();
     };
   }, []);
+
+  // ─── CONFERÊNCIA AUTOMÁTICA DE PIX PENDENTES (não depende do webhook) ───
+  // A cada 30s (e ao abrir o painel), pergunta direto à InfinitePay se os Pix
+  // "Aguardando Pagamento" já caíram e marca "Pago" na hora.
+  const conferindoRef = useRef(false);
+
+  useEffect(() => {
+    const conferir = async () => {
+      if (conferindoRef.current) return;
+      const separar = (lista) =>
+        lista.filter(
+          (p) =>
+            (p.Status || "") === "Aguardando Pagamento" &&
+            String(p.MetodoPagamento || "").includes("InfinitePay") &&
+            p.PagamentoInfinitePay &&
+            (p.PagamentoInfinitePay.slug || p.PagamentoInfinitePay.transaction_nsu || p.PagamentoInfinitePay.order_nsu)
+        );
+      const pendentesPedidos = separar(pedidos);
+      const pendentesEncomendas = separar(encomendas);
+      if (pendentesPedidos.length === 0 && pendentesEncomendas.length === 0) return;
+
+      conferindoRef.current = true;
+      const checar = async (item, marcar) => {
+        try {
+          const resposta = await fetch(`${apiBase}/api/infinitepay/payment-check`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              orderNsu: (item.PagamentoInfinitePay && item.PagamentoInfinitePay.order_nsu) || item.NumeroPedidoLimpo || "",
+              slug: (item.PagamentoInfinitePay && item.PagamentoInfinitePay.slug) || "",
+              transactionNsu: (item.PagamentoInfinitePay && item.PagamentoInfinitePay.transaction_nsu) || "",
+            }),
+          });
+          const dados = await resposta.json();
+          if (dados.paid) await marcar();
+        } catch (e) {}
+      };
+
+      try {
+        for (const item of pendentesPedidos.slice(0, 5)) {
+          await checar(item, async () => {
+            await update(ref(db, `pedidos/${item.FirebaseKey}`), { Status: "Pago", PagoEm: new Date().toLocaleString("pt-BR") });
+            toast.success(`Pix do pedido ${item.NumeroPedido || ""} confirmado — status atualizado para Pago.`);
+          });
+        }
+        for (const item of pendentesEncomendas.slice(0, 5)) {
+          await checar(item, async () => {
+            await update(ref(db, `encomendas/${item.UsuarioId}/${item.FirebaseKey}`), { Status: "Pago", PagoEm: new Date().toLocaleString("pt-BR") });
+            toast.success(`Pix da encomenda confirmado — status atualizado para Pago.`);
+          });
+        }
+      } finally {
+        conferindoRef.current = false;
+      }
+    };
+    conferir();
+    const intervalo = setInterval(conferir, 30000);
+    return () => clearInterval(intervalo);
+  }, [pedidos, encomendas]);
 
   const nomeDe = (item) => (item.UsuarioId && clientes[item.UsuarioId]) || "";
 

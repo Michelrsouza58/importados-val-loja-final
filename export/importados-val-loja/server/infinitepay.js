@@ -5,10 +5,14 @@ const json = (data, status = 200) =>
 
 const limpar = (v, limite = 64) => String(v || "").replace(/[^A-Za-z0-9_-]/g, "").slice(0, limite);
 
+// Handle da loja (público — aparece no próprio checkout). Padrão garante que a
+// consulta de pagamento funcione mesmo sem a variável INFINITEPAY_HANDLE no Cloudflare.
+const HANDLE_PADRAO = "michelrsouza";
+
 export async function paymentCheck(request, env) {
   try {
     const corpo = await request.json();
-    const handle = limpar(env.INFINITEPAY_HANDLE, 40) || limpar(corpo.handle, 40);
+    const handle = limpar(env.INFINITEPAY_HANDLE, 40) || limpar(corpo.handle, 40) || HANDLE_PADRAO;
     const orderNsu = limpar(corpo.orderNsu);
     if (!handle) return json({ paid: false, erro: "Informe o INFINITEPAY_HANDLE no Cloudflare ou no painel admin." });
     if (!orderNsu) return json({ paid: false, erro: "Pedido sem NSU." });
