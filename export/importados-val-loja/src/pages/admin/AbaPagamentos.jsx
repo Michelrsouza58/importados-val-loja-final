@@ -1,7 +1,7 @@
 // src/pages/admin/AbaPagamentos.jsx
 import React, { useState, useEffect } from "react";
 import { db } from "../../lib/firebase";
-import { ref, set } from "firebase/database";
+import { ref, set as setFirebase } from "firebase/database"; // 1. Renomeado a importação para evitar conflito
 import { toast } from "sonner";
 import { FiSave, FiInfo, FiLink2, FiCheckCircle, FiAlertTriangle, FiXCircle } from "react-icons/fi";
 import apiBase from "../../lib/apiBase";
@@ -13,25 +13,13 @@ const ROTULO_FONTE = {
   "leitura-anonima": "leitura anônima",
 };
 
-const FORM_VAZIO = () => ({
-  infinitepayHandle: "",
-  infinitepayWebhookUrl: "",
-  infinitepayWebhookN8n: "",
-  mercadoPagoAccessToken: "",
-  mercadoPagoPublicKey: "",
-  mercadoPagoWebhookCriar: "",
-  mercadoPagoWebhookPago: "",
-});
-
 export default function AbaPagamentos({ config }) {
   const [form, setForm] = useState({
-    infinitepayHandle: config.pagamentos.infinitepayHandle || "",
-    infinitepayWebhookUrl: config.pagamentos.infinitepayWebhookUrl || "",
-    infinitepayWebhookN8n: config.pagamentos.infinitepayWebhookN8n || "",
-    mercadoPagoAccessToken: config.pagamentos.mercadoPagoAccessToken || "",
-    mercadoPagoPublicKey: config.pagamentos.mercadoPagoPublicKey || "",
-    mercadoPagoWebhookCriar: config.pagamentos.mercadoPagoWebhookCriar || "",
-    mercadoPagoWebhookPago: config.pagamentos.mercadoPagoWebhookPago || "",
+    infinitepayHandle: config?.pagamentos?.infinitepayHandle || "",
+    infinitepayWebhookUrl: config?.pagamentos?.infinitepayWebhookUrl || "",
+    infinitepayWebhookN8n: config?.pagamentos?.infinitepayWebhookN8n || "",
+    mercadoPagoAccessToken: config?.pagamentos?.mercadoPagoAccessToken || "",
+    mercadoPagoPublicKey: config?.pagamentos?.mercadoPagoPublicKey || "",
   });
   const [salvando, setSalvando] = useState(false);
   const [testeToken, setTesteToken] = useState(null);
@@ -65,17 +53,19 @@ export default function AbaPagamentos({ config }) {
     setTestando(false);
   };
 
-  const set = (campo, valor) => setForm((f) => ({ ...f, [campo]: valor }));
+  // 2. Renomeado a função do state para atualizarCampo
+  const atualizarCampo = (campo, valor) => setForm((f) => ({ ...f, [campo]: valor }));
 
   const salvar = async () => {
     setSalvando(true);
     try {
-      await set(ref(db, "configuracoes/pagamentos"), form);
+      // 3. Agora chama a função de escrita do Firebase do jeito certo
+      await setFirebase(ref(db, "configuracoes/pagamentos"), form);
       toast.success("Credenciais de pagamento salvas no banco!");
     } catch (erro) {
       const motivo = (erro && (erro.code || erro.message)) || "erro desconhecido";
       if (String(motivo).includes("permission")) {
-        toast.error("O Firebase recusou a escrita (permission denied). Aplique as regras do README-DEPLOY (seção 3) com uma conta logada.");
+        toast.error("O Firebase recusou a escrita (permission denied). Aplique as regras do README-DEPLOY com uma conta logada.");
       } else {
         toast.error(`Falha ao salvar: ${motivo}`);
       }
@@ -102,7 +92,7 @@ export default function AbaPagamentos({ config }) {
               <label className="text-[10px] font-bold uppercase tracking-wider text-espresso/50">Sua @handle (sem o $)</label>
               <input
                 value={form.infinitepayHandle}
-                onChange={(e) => set("infinitepayHandle", e.target.value)}
+                onChange={(e) => atualizarCampo("infinitepayHandle", e.target.value)}
                 className={campoClasse}
                 placeholder="ex: minhaloja"
                 data-testid="admin-pagamentos-infinitepay-handle"
@@ -114,7 +104,7 @@ export default function AbaPagamentos({ config }) {
               </label>
               <input
                 value={form.infinitepayWebhookUrl}
-                onChange={(e) => set("infinitepayWebhookUrl", e.target.value)}
+                onChange={(e) => atualizarCampo("infinitepayWebhookUrl", e.target.value)}
                 className={campoClasse}
                 placeholder="https://cloud.activepieces.com/api/v1/webhooks/..."
                 data-testid="admin-pagamentos-infinitepay-webhook-url"
@@ -137,7 +127,7 @@ export default function AbaPagamentos({ config }) {
               <label className="text-[10px] font-bold uppercase tracking-wider text-espresso/50">Webhook para CRIAR o link (n8n — opcional)</label>
               <input
                 value={form.infinitepayWebhookN8n}
-                onChange={(e) => set("infinitepayWebhookN8n", e.target.value)}
+                onChange={(e) => atualizarCampo("infinitepayWebhookN8n", e.target.value)}
                 className={campoClasse}
                 placeholder="https://...app.n8n.cloud/webhook/checkout"
                 data-testid="admin-pagamentos-infinitepay-webhook"
@@ -156,7 +146,7 @@ export default function AbaPagamentos({ config }) {
               <input
                 type="password"
                 value={form.mercadoPagoAccessToken}
-                onChange={(e) => set("mercadoPagoAccessToken", e.target.value)}
+                onChange={(e) => atualizarCampo("mercadoPagoAccessToken", e.target.value)}
                 className={campoClasse}
                 placeholder="APP_USR-..."
                 data-testid="admin-pagamentos-mp-token"
@@ -166,109 +156,16 @@ export default function AbaPagamentos({ config }) {
               <label className="text-[10px] font-bold uppercase tracking-wider text-espresso/50">Public Key (opcional)</label>
               <input
                 value={form.mercadoPagoPublicKey}
-                onChange={(e) => set("mercadoPagoPublicKey", e.target.value)}
+                onChange={(e) => atualizarCampo("mercadoPagoPublicKey", e.target.value)}
                 className={campoClasse}
                 placeholder="APP_USR-..."
                 data-testid="admin-pagamentos-mp-publickey"
               />
             </div>
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-espresso/50 flex items-center gap-1.5">
-                <FiLink2 className="text-gold" size={11} /> Webhook para CRIAR o pagamento com cartão (ActivePieces)
-              </label>
-              <input
-                value={form.mercadoPagoWebhookCriar}
-                onChange={(e) => set("mercadoPagoWebhookCriar", e.target.value)}
-                className={campoClasse}
-                placeholder="https://cloud.activepieces.com/api/v1/webhooks/..."
-                data-testid="admin-pagamentos-mp-webhook-criar"
-              />
-              <p className="text-[10px] text-espresso/40">
-                O caminho para quem NÃO pode cadastrar secrets no Cloudflare: crie um fluxo no ActivePieces com o
-                código pronto (activepieces-cartao.js) e cole a URL aqui. O site envia a sacola, o fluxo lê o Access
-                Token salvo AQUI no painel e devolve o link do Mercado Pago. Deixe vazio para usar o caminho padrão
-                (que exige secret no Cloudflare).
-              </p>
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-espresso/50 flex items-center gap-1.5">
-                <FiLink2 className="text-gold" size={11} /> Webhook de pagamento aprovado (Mercado Pago → ActivePieces)
-              </label>
-              <input
-                value={form.mercadoPagoWebhookPago}
-                onChange={(e) => set("mercadoPagoWebhookPago", e.target.value)}
-                className={campoClasse}
-                placeholder="https://cloud.activepieces.com/api/v1/webhooks/..."
-                data-testid="admin-pagamentos-mp-webhook-pago"
-              />
-              <p className="text-[10px] text-espresso/40">
-                Faz o pedido virar "Pago" sozinho quando o cartão é aprovado (igual ao Pix). Fluxo com o código
-                activepieces-mp-pago.js. A URL é embutida automaticamente em cada link de pagamento criado — não
-                precisa cadastrar no Mercado Pago.
-              </p>
-            </div>
-            <button
-              onClick={testarToken}
-              disabled={testando || !form.mercadoPagoAccessToken.trim()}
-              className="w-full flex items-center justify-center gap-2 bg-espresso hover:bg-ink disabled:bg-espresso/20 disabled:cursor-not-allowed text-creme py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all"
-              data-testid="admin-pagamentos-mp-testar"
-            >
-              {testando ? "Testando..." : "Testar credenciais"}
-            </button>
-            {testeToken && (
-              <div
-                data-testid="admin-pagamentos-mp-resultado-teste"
-                className={`flex items-start gap-2 rounded-xl p-3 border ${
-                  testeToken.valida && testeToken.tipo === "producao"
-                    ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-                    : testeToken.valida
-                    ? "bg-amber-50 border-amber-200 text-amber-800"
-                    : "bg-rose-50 border-rose-200 text-rose-800"
-                }`}
-              >
-                {testeToken.valida && testeToken.tipo === "producao" && <FiCheckCircle className="shrink-0 mt-0.5" size={13} />}
-                {testeToken.valida && testeToken.tipo === "teste" && <FiAlertTriangle className="shrink-0 mt-0.5" size={13} />}
-                {!testeToken.valida && <FiXCircle className="shrink-0 mt-0.5" size={13} />}
-                <p className="text-[10px] leading-relaxed">
-                  {testeToken.valida && testeToken.tipo === "producao" &&
-                    `Token de PRODUÇÃO válido — conta ${testeToken.conta}. Pronto para vender de verdade.`}
-                  {testeToken.valida && testeToken.tipo === "teste" &&
-                    `Token de TESTE válido (${testeToken.conta}) — só aceita usuários e cartões de teste do Mercado Pago. Para vender de verdade, troque pelo token de produção (APP_USR-...) em developers.mercadopago.com › Credenciais › aba Produção.`}
-                  {!testeToken.valida && testeToken.erro}
-                </p>
-              </div>
-            )}
-            <div
-              data-testid="admin-pagamentos-mp-status-servidor"
-              className={`flex items-start gap-2 rounded-xl p-3 border ${
-                statusServidor && statusServidor.encontrado
-                  ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-                  : "bg-amber-50 border-amber-200 text-amber-800"
-              }`}
-            >
-              {statusServidor && statusServidor.encontrado ? (
-                <FiCheckCircle className="shrink-0 mt-0.5" size={13} />
-              ) : (
-                <FiAlertTriangle className="shrink-0 mt-0.5" size={13} />
-              )}
-              <p className="text-[10px] leading-relaxed">
-                {statusServidor === null
-                  ? "Verificando se o servidor consegue ler o token salvo..."
-                  : statusServidor.encontrado
-                  ? `O servidor consegue ler o token salvo (fonte: ${ROTULO_FONTE[statusServidor.fonte] || statusServidor.fonte}). O pagamento com cartão pode funcionar.`
-                  : statusServidor.erro
-                  ? "Não foi possível consultar o servidor agora."
-                  : "O servidor NÃO consegue ler o token salvo aqui — sem isso o caminho padrão do cartão falha. SEM cadastrar nada no Cloudflare: use os fluxos do ActivePieces (códigos prontos activepieces-cartao.js e activepieces-mp-pago.js) e cole as URLs nos dois campos acima — o cartão funciona igual. Ou, se um dia puder, cadastre FIREBASE_SERVICE_ACCOUNT (ou FIREBASE_SYSTEM_EMAIL + FIREBASE_SYSTEM_PASS) no Cloudflare. Passo a passo no README-DEPLOY, seção 5."}
-              </p>
-            </div>
-            <div className="flex items-start gap-2 bg-gold/10 border border-gold/30 rounded-xl p-3">
-              <FiInfo className="text-gold shrink-0 mt-0.5" size={13} />
-              <p className="text-[10px] text-espresso/70 leading-relaxed">
-                No checkout com cartão só o <strong>Access Token</strong> é usado — a Public Key fica opcional aqui.
-                O token pode ser de <strong>qualquer conta</strong> (mesmo de outra pessoa): o dinheiro cai na conta
-                dona do token. Use o de <strong>produção (APP_USR-...)</strong> para vender de verdade; o de teste
-                (TEST-...) só aceita cartões de teste. Obtenha em developers.mercadopago.com › Sua aplicação ›
-                Credenciais.
+            <div className="flex items-start gap-2 bg-amber-50 border border-amber-100 rounded-xl p-3">
+              <FiInfo className="text-amber-700 shrink-0 mt-0.5" size={13} />
+              <p className="text-[10px] text-amber-800 leading-relaxed">
+                Obtenha em developers.mercadopago.com &gt; Sua aplicação &gt; Credenciais.
               </p>
             </div>
           </div>
