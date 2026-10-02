@@ -64,6 +64,57 @@ Cliente paga o Pix
 - Se um pedido não virar "Pago", olhe o histórico da execução no ActivePieces —
   o código devolve `{ ok, motivo }` apontando o que faltou.
 
+## Cartão (Mercado Pago) sem secrets no Cloudflare
+
+O caminho padrão do cartão (função do site) precisa que o servidor consiga ler o
+Access Token salvo no painel — e isso pede secret no Cloudflare. Como o seu projeto
+**não aceita variáveis/secrets**, use o ActivePieces nos dois pontos, igual ao Pix:
+
+```
+Sacola → PAGAR com Cartão
+   → site envia a sacola para o fluxo "criar pagamento" (ActivePieces)
+      → lê o Access Token do painel (Firebase) → cria o link no Mercado Pago
+         → devolve o link → o site leva a cliente ao checkout do Mercado Pago
+
+Cliente paga o cartão → Mercado Pago avisa o fluxo "pagamento aprovado" (ActivePieces)
+      → confere o pagamento → pedido vira "Pago" no Firebase
+```
+
+### Fluxo 1 — "criar pagamento" (obrigatório para este caminho)
+
+1. **Trigger — Webhook**: crie o fluxo, copie a URL e cole em **Admin ›
+   Pagamentos › Webhook para CRIAR o pagamento com cartão** e salve.
+2. **Passo — Code by ActivePieces**: cole o conteúdo de `activepieces-cartao.js`.
+   Crie o input `body` mapeado com o corpo do webhook (a sacola enviada pelo site).
+3. **EMAIL/SENHA no código**: o MESMO usuário de sistema do fluxo do Pix.
+4. Deixe o fluxo **publicado/ligado**.
+
+### Fluxo 2 — "pagamento aprovado" (o pedido vira "Pago" sozinho)
+
+1. **Trigger — Webhook**: crie o segundo fluxo, copie a URL e cole em **Admin ›
+   Pagamentos › Webhook de pagamento aprovado (Mercado Pago)** e salve.
+2. **Passo — Code by ActivePieces**: cole o conteúdo de `activepieces-mp-pago.js`
+   (input `body` = corpo do webhook).
+3. Pronto: o link criado pelo Fluxo 1 já leva essa URL embutida (campo
+   `notification_url`) — **nada para cadastrar no Mercado Pago**.
+
+### O que os códigos fazem
+
+- **Fluxo 1**: valida a sacola, autentica no Firebase (usuário de sistema), lê
+  `configuracoes/pagamentos/mercadoPagoAccessToken`, cria a preferência com retorno
+  para "Meus Pedidos", `external_reference` = nº do pedido e embute a URL do Fluxo 2;
+- **Fluxo 2**: recebe a notificação, consulta o pagamento na API do Mercado Pago
+  com o mesmo token e só marca "Pago" se `status === "approved"` — cobre pedidos
+  (pelo número) e encomendas (por `PagamentoMercadoPago.orderNsu`);
+- Os dois são seguros para reexecutar (só mexem no que está "Aguardando Pagamento")
+  e devolvem `{ ok, motivo }` no histórico de execução para diagnóstico.
+
+### Se o site disser "sem o link de pagamento"
+
+O site espera que a resposta do Fluxo 1 tenha `{ url }`. Se o ActivePieces não
+devolver a saída do Code automaticamente, adicione no fim do fluxo uma ação
+"Respond to Webhook" (ou equivalente) devolvendo o resultado do Code.
+
 ## Checkout somente Pix
 
 A API da InfinitePay **não aceita** escolher a forma de pagamento por pedido — o

@@ -62,12 +62,89 @@ export async function lerComoAdmin(env, caminho) {
   }
 }
 
+// ─── Usuário de sistema (Firebase Auth REST) — alternativa simples à chave de serviço ───
+export const WEB_API_KEY_PADRAO = "AIzaSyAxBK6w5g_bP_HJv7N8JFGo1somSGPHYIU";
+
+let sistemaCache = { token: null, expira: 0 };
+
+async function entrarUsuarioSistema(env) {
+  const agora = Math.floor(Date.now() / 1000);
+  if (sistemaCache.token && sistemaCache.expira > agora + 60) return sistemaCache.token;
+  const email = env.FIREBASE_SYSTEM_EMAIL || "";
+  const senha = env.FIREBASE_SYSTEM_PASS || "";
+  if (!email || !senha) return "";
+  try {
+    const resposta = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${env.FIREBASE_WEB_API_KEY || WEB_API_KEY_PADRAO}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password: senha, returnSecureToken: true }),
+        signal: AbortSignal.timeout(9000),
+      }
+    );
+    if (!resposta.ok) return "";
+    const dados = await resposta.json();
+    if (!dados.idToken) return "";
+    sistemaCache = { token: dados.idToken, expira: agora + Math.min(Number(dados.expiresIn || 3600), 3300) };
+    return sistemaCache.token;
+  } catch {
+    return "";
+  }
+}
+
+async function lerAnonimo(env, caminho) {
+  try {
+    const resposta = await fetch(`${dbDe(env)}/${caminho}.json`, { signal: AbortSignal.timeout(8000) });
+    if (!resposta.ok) return null;
+    return await resposta.json();
+  } catch {
+    return null;
+  }
+}
+
+async function lerPagamentosComoSistema(env) {
+  const idSistema = await entrarUsuarioSistema(env);
+  if (!idSistema) return null;
+  try {
+    const resposta = await fetch(`${dbDe(env)}/configuracoes/pagamentos.json?auth=${idSistema}`, {
+      signal: AbortSignal.timeout(9000),
+    });
+    if (!resposta.ok) return null;
+    return await resposta.json();
+  } catch {
+    return null;
+  }
+}
+
 // Token do Mercado Pago: variável de ambiente OU o salvo na aba Pagamentos do painel admin
+// (lido com chave de serviço, usuário de sistema ou, em último caso, leitura anônima).
 export async function tokenMercadoPago(env) {
   if (env.MP_ACCESS_TOKEN) return env.MP_ACCESS_TOKEN;
-  if (!env.FIREBASE_SERVICE_ACCOUNT) return "";
-  const pagamentos = await lerComoAdmin(env, "configuracoes/pagamentos");
-  return String((pagamentos && pagamentos.mercadoPagoAccessToken) || "");
+  if (env.FIREBASE_SERVICE_ACCOUNT) {
+    const pagamentos = await lerComoAdmin(env, "configuracoes/pagamentos");
+    if (pagamentos && pagamentos.mercadoPagoAccessToken) return String(pagamentos.mercadoPagoAccessToken);
+  }
+  const doSistema = await lerPagamentosComoSistema(env);
+  if (doSistema && doSistema.mercadoPagoAccessToken) return String(doSistema.mercadoPagoAccessToken);
+  const publico = await lerAnonimo(env, "configuracoes/pagamentos");
+  if (publico && publico.mercadoPagoAccessToken) return String(publico.mercadoPagoAccessToken);
+  return "";
+}
+
+// Diagnóstico (usado pelo painel admin): de onde o servidor consegue ler o token.
+// Nunca devolve o token em si, só a origem.
+export async function fonteDoTokenMercadoPago(env) {
+  if (env.MP_ACCESS_TOKEN) return { encontrado: true, fonte: "variavel-de-ambiente" };
+  if (env.FIREBASE_SERVICE_ACCOUNT) {
+    const pagamentos = await lerComoAdmin(env, "configuracoes/pagamentos");
+    if (pagamentos && pagamentos.mercadoPagoAccessToken) return { encontrado: true, fonte: "chave-de-servico" };
+  }
+  const doSistema = await lerPagamentosComoSistema(env);
+  if (doSistema && doSistema.mercadoPagoAccessToken) return { encontrado: true, fonte: "usuario-de-sistema" };
+  const publico = await lerAnonimo(env, "configuracoes/pagamentos");
+  if (publico && publico.mercadoPagoAccessToken) return { encontrado: true, fonte: "leitura-anonima" };
+  return { encontrado: false, fonte: "" };
 }
 
 // Lista de e-mails administradores: env OU painel admin

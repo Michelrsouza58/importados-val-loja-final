@@ -53,11 +53,57 @@ def _http_json(url: str, method: str = "GET", payload: dict | None = None, heade
         return json.loads(resposta.read().decode("utf-8"))
 
 
+WEB_API_KEY_PADRAO = "AIzaSyAxBK6w5g_bP_HJv7N8JFGo1somSGPHYIU"  # chave web pública (já vai no bundle do site)
+_sistema_cache = {"token": None, "expira": 0}
+
+
+def _entrar_usuario_sistema() -> str:
+    """Login por Firebase Auth REST com o usuário de sistema (FIREBASE_SYSTEM_EMAIL/PASS)."""
+    import time
+
+    agora = int(time.time())
+    if _sistema_cache["token"] and _sistema_cache["expira"] > agora + 60:
+        return _sistema_cache["token"]
+    email = os.environ.get("FIREBASE_SYSTEM_EMAIL", "")
+    senha = os.environ.get("FIREBASE_SYSTEM_PASS", "")
+    if not email or not senha:
+        return ""
+    api_key = os.environ.get("FIREBASE_WEB_API_KEY", "") or WEB_API_KEY_PADRAO
+    try:
+        dados = _http_json(
+            f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={api_key}",
+            method="POST",
+            payload={"email": email, "password": senha, "returnSecureToken": True},
+        )
+        token_id = str(dados.get("idToken") or "")
+        if token_id:
+            _sistema_cache["token"] = token_id
+            _sistema_cache["expira"] = agora + min(int(dados.get("expiresIn") or 3600), 3300)
+        return token_id
+    except Exception:
+        return ""
+
+
+def _ler_pagamentos_com_sistema(db_url: str) -> str:
+    token_id = _entrar_usuario_sistema()
+    if not token_id:
+        return ""
+    try:
+        dados = _http_json(f"{db_url.rstrip('/')}/configuracoes/pagamentos.json?auth={token_id}")
+        return str((dados or {}).get("mercadoPagoAccessToken") or "")
+    except Exception:
+        return ""
+
+
 def _token_do_firebase() -> str:
-    """Lê o token do Mercado Pago salvo no painel admin (configuracoes/pagamentos)."""
+    """Lê o token do Mercado Pago salvo no painel admin (configuracoes/pagamentos).
+    Tenta usuário de sistema (autenticado) e, por último, leitura anônima (se as regras permitirem)."""
     db_url = os.environ.get("FIREBASE_DB_URL", "")
     if not db_url:
         return ""
+    do_sistema = _ler_pagamentos_com_sistema(db_url)
+    if do_sistema:
+        return do_sistema
     try:
         dados = _http_json(f"{db_url.rstrip('/')}/configuracoes/pagamentos.json")
         return str((dados or {}).get("mercadoPagoAccessToken") or "")
@@ -116,6 +162,52 @@ async def criar_preferencia(req: PreferenciaRequest):
         return {"error": "Mercado Pago não retornou o link de pagamento."}
 
     return {"initPoint": init_point, "preferenceId": resposta.get("id", ""), "total": total}
+
+
+class ValidarTokenRequest(BaseModel):
+    accessToken: str = ""
+
+
+@app.post("/api/mercadopago/validar-token")
+async def mercadopago_validar_token(req: ValidarTokenRequest):
+    """Testa um Access Token do Mercado Pago enviado pelo painel admin (nunca devolve o token)."""
+    token = (req.accessToken or "").strip()
+    if not token:
+        return {"valida": False, "erro": "Preencha o Access Token antes de testar."}
+    try:
+        usuario = _http_json(
+            "https://api.mercadopago.com/users/me",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    except urllib.error.HTTPError as erro:
+        if erro.code in (401, 403):
+            return {"valida": False, "erro": "Token recusado pelo Mercado Pago. Copie novamente de developers.mercadopago.com › Sua aplicação › Credenciais."}
+        return {"valida": False, "erro": f"Mercado Pago respondeu {erro.code}. Verifique o token."}
+    except Exception:
+        return {"valida": False, "erro": "Falha de conexão com o Mercado Pago. Tente novamente."}
+    return {
+        "valida": True,
+        "tipo": "teste" if token.startswith("TEST-") else "producao",
+        "conta": str((usuario or {}).get("email") or (usuario or {}).get("nickname") or "")[:80],
+    }
+
+
+@app.get("/api/mercadopago/status-servidor")
+async def mercadopago_status_servidor():
+    """Diagnóstico: de onde o servidor consegue ler o token salvo no painel admin."""
+    db_url = os.environ.get("FIREBASE_DB_URL", "")
+    if os.environ.get("MP_ACCESS_TOKEN", ""):
+        return {"encontrado": True, "fonte": "variavel-de-ambiente"}
+    if db_url:
+        if _ler_pagamentos_com_sistema(db_url):
+            return {"encontrado": True, "fonte": "usuario-de-sistema"}
+        try:
+            dados = _http_json(f"{db_url.rstrip('/')}/configuracoes/pagamentos.json")
+            if (dados or {}).get("mercadoPagoAccessToken"):
+                return {"encontrado": True, "fonte": "leitura-anonima"}
+        except Exception:
+            pass
+    return {"encontrado": False, "fonte": ""}
 
 
 # ─── E-MAILS: notificação de novos pedidos/encomendas para as administradoras ───

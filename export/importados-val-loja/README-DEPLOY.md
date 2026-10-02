@@ -112,8 +112,31 @@ você só precisa cadastrar **um único secret** no Cloudflare:
     em Preview).
 - Essa chave permite que as funções do site leiam o token do Mercado Pago e os
   e-mails administradores direto do seu painel admin — nada mais para configurar.
+- **Sem secrets no Cloudflare (o seu caso):** use o ActivePieces, igual ao Pix —
+  dois fluxos com os códigos prontos que vão no repositório:
+  1. `activepieces-cartao.js` → fluxo "criar pagamento": cole a URL dele em
+     Admin › Pagamentos › "Webhook para CRIAR o pagamento com cartão". O site
+     envia a sacola, o fluxo lê o Access Token salvo no painel e devolve o link
+     do Mercado Pago. Nenhuma variável no Cloudflare.
+  2. `activepieces-mp-pago.js` → fluxo "pagamento aprovado": cole a URL dele em
+     "Webhook de pagamento aprovado (Mercado Pago)". O link criado já leva esse
+     aviso embutido e o pedido vira "Pago" sozinho quando o cartão é aprovado.
+  Passo a passo completo: `activepieces-fluxo.md`, seção "Cartão sem secrets".
+- **Alternativa com chave de serviço:** em vez do JSON gigante, cadastre
+  DOIS secrets curtos — `FIREBASE_SYSTEM_EMAIL` e `FIREBASE_SYSTEM_PASS` — usando o
+  MESMO usuário de sistema do fluxo ActivePieces (`webhook@sistema-importadosval.com`
+  e a senha dele). As funções fazem login no Firebase com esse usuário e leem o token
+  salvo na aba Pagamentos.
 - Opcional: `MP_ACCESS_TOKEN` (fixa o token por fora), `INFINITEPAY_HANDLE`,
   `ADMIN_EMAILS`, `FIREBASE_DB_URL` — todos têm padrão ou vêm do painel.
+- **Como conferir se ficou certo:** abra o painel admin › **Pagamentos**. A caixinha
+  do Mercado Pago mostra "O servidor consegue ler o token salvo" (verde) ou exatamente
+  o que falta configurar (amarelo). Use o botão **Testar credenciais** para validar o
+  token direto com o Mercado Pago — ele diz se é de **produção** (APP_USR-, aceita
+  vendas reais) ou de **teste** (TEST-, só cartões de teste) e de qual conta é.
+  Enquanto a caixinha estiver amarela, o cartão falha mesmo com o token preenchido —
+  é isso que estava acontecendo: as regras do Firebase escondem o `pagamentos` de
+  quem não está autenticado, então o servidor precisa de um dos secrets acima.
 
 > Sobre "site estático não aceita variáveis": o site em si não usa variáveis
 > mesmo — quem usa são as **funções serverless** que acompanham o deploy na

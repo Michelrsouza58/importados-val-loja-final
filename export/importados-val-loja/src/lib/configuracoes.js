@@ -20,6 +20,8 @@ export const CONFIG_PADRAO = {
     infinitepayWebhookN8n: "",
     mercadoPagoAccessToken: "",
     mercadoPagoPublicKey: "",
+    mercadoPagoWebhookCriar: "",
+    mercadoPagoWebhookPago: "",
   },
   admins: [],
   vitrine: { heroKey: "", destaques: [], heroCupomCodigo: "", heroCupomRotulo: "" },

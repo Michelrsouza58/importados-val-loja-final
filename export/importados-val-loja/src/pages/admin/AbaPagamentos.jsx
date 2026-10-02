@@ -1,9 +1,17 @@
 // src/pages/admin/AbaPagamentos.jsx
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { db } from "../../lib/firebase";
 import { ref, set as setFirebase } from "firebase/database"; // 1. Renomeado a importação para evitar conflito
 import { toast } from "sonner";
-import { FiSave, FiInfo, FiLink2 } from "react-icons/fi";
+import { FiSave, FiInfo, FiLink2, FiCheckCircle, FiAlertTriangle, FiXCircle } from "react-icons/fi";
+import apiBase from "../../lib/apiBase";
+
+const ROTULO_FONTE = {
+  "variavel-de-ambiente": "variável MP_ACCESS_TOKEN",
+  "chave-de-servico": "chave de serviço (FIREBASE_SERVICE_ACCOUNT)",
+  "usuario-de-sistema": "usuário de sistema (FIREBASE_SYSTEM_EMAIL/PASS)",
+  "leitura-anonima": "leitura anônima",
+};
 
 export default function AbaPagamentos({ config }) {
   const [form, setForm] = useState({
@@ -14,6 +22,36 @@ export default function AbaPagamentos({ config }) {
     mercadoPagoPublicKey: config?.pagamentos?.mercadoPagoPublicKey || "",
   });
   const [salvando, setSalvando] = useState(false);
+  const [testeToken, setTesteToken] = useState(null);
+  const [testando, setTestando] = useState(false);
+  const [statusServidor, setStatusServidor] = useState(null);
+
+  // Diagnóstico: o servidor consegue ler o token do Mercado Pago salvo aqui no Firebase?
+  useEffect(() => {
+    let ativo = true;
+    fetch(`${apiBase}/api/mercadopago/status-servidor`)
+      .then((r) => r.json())
+      .then((d) => { if (ativo) setStatusServidor(d || { encontrado: false }); })
+      .catch(() => { if (ativo) setStatusServidor({ encontrado: false, erro: true }); });
+    return () => { ativo = false; };
+  }, []);
+
+  const testarToken = async () => {
+    setTestando(true);
+    setTesteToken(null);
+    try {
+      const resposta = await fetch(`${apiBase}/api/mercadopago/validar-token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accessToken: form.mercadoPagoAccessToken }),
+      });
+      const dados = await resposta.json();
+      setTesteToken(dados || { valida: false, erro: "Resposta vazia do servidor." });
+    } catch (e) {
+      setTesteToken({ valida: false, erro: "Falha de conexão. Tente novamente." });
+    }
+    setTestando(false);
+  };
 
   // 2. Renomeado a função do state para atualizarCampo
   const atualizarCampo = (campo, valor) => setForm((f) => ({ ...f, [campo]: valor }));
@@ -104,7 +142,7 @@ export default function AbaPagamentos({ config }) {
           <div className="bg-creme/50 border border-pessego/20 rounded-2xl p-5 space-y-4">
             <h3 className="text-[10px] font-bold uppercase tracking-widest text-espresso/60">Mercado Pago — Cartão</h3>
             <div className="space-y-1.5">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-espresso/50">Access Token (produção ou teste)</label>
+              <label className="text-[10px] font-bold uppercase tracking-wider text-espresso/50">Access Token (o único campo necessário)</label>
               <input
                 type="password"
                 value={form.mercadoPagoAccessToken}

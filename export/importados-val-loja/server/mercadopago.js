@@ -1,24 +1,11 @@
 // Serverless: Mercado Pago (Checkout Pro + confirmação de pagamento)
 
-import { tokenMercadoPago, DB_PADRAO } from "./util/firebase.js";
+import { tokenMercadoPago, fonteDoTokenMercadoPago, DB_PADRAO } from "./util/firebase.js";
 
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
 
 const limpar = (v, limite = 64) => String(v || "").replace(/[^A-Za-z0-9_-]/g, "").slice(0, limite);
-
-async function tokenDoFirebaseAnonimo(env) {
-  try {
-    const resposta = await fetch(`${(env.FIREBASE_DB_URL || DB_PADRAO).replace(/\/$/, "")}/configuracoes/pagamentos.json`, {
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!resposta.ok) return "";
-    const dados = await resposta.json();
-    return String((dados && dados.mercadoPagoAccessToken) || "");
-  } catch {
-    return "";
-  }
-}
 
 export async function criarPreferencia(request, env) {
   try {
@@ -32,8 +19,8 @@ export async function criarPreferencia(request, env) {
       }
     }
 
-    let token = await tokenMercadoPago(env);
-    if (!token) token = await tokenDoFirebaseAnonimo(env);
+    // tokenMercadoPago já tenta: variável de ambiente → chave de serviço → usuário de sistema → leitura anônima
+    const token = await tokenMercadoPago(env);
     if (!token) {
       return json(
         { error: "O Mercado Pago ainda não foi configurado. Salve o Access Token na aba Pagamentos do painel admin (ou na variável MP_ACCESS_TOKEN)." },
@@ -112,4 +99,44 @@ export async function confirmarPagamento(request, env) {
   } catch {
     return json({ verificado: false, motivo: "conexao" });
   }
+}
+
+// Testa um Access Token do Mercado Pago enviado pelo painel admin (nunca devolve o token).
+// Diz se é válido, se é de produção ou de teste e de qual conta é.
+export async function validarToken(request, env) {
+  let corpo = {};
+  try {
+    corpo = await request.json();
+  } catch {}
+  const token = String(corpo.accessToken || "").trim();
+  if (!token) return json({ valida: false, erro: "Preencha o Access Token antes de testar." });
+
+  try {
+    const resposta = await fetch("https://api.mercadopago.com/users/me", {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!resposta.ok) {
+      const detalhe = await resposta.text();
+      const motivo =
+        resposta.status === 401 || resposta.status === 403
+          ? "Token recusado pelo Mercado Pago. Copie novamente de developers.mercadopago.com › Sua aplicação › Credenciais."
+          : `Mercado Pago respondeu ${resposta.status}. ${detalhe.slice(0, 140)}`;
+      return json({ valida: false, erro: motivo });
+    }
+    const usuario = await resposta.json();
+    return json({
+      valida: true,
+      tipo: token.startsWith("TEST-") ? "teste" : "producao",
+      conta: String(usuario.email || usuario.nickname || "").slice(0, 80),
+    });
+  } catch {
+    return json({ valida: false, erro: "Falha de conexão com o Mercado Pago. Tente novamente." });
+  }
+}
+
+// Diagnóstico para o painel admin: o servidor consegue ler o token salvo no Firebase?
+export async function statusServidor(request, env) {
+  const resultado = await fonteDoTokenMercadoPago(env);
+  return json(resultado);
 }

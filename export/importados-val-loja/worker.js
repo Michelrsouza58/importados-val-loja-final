@@ -4,7 +4,7 @@
 //
 // Rotas /api/* → funções serverless (pasta server/). Todo o resto → site (pasta dist/).
 
-import { criarPreferencia, confirmarPagamento } from "./server/mercadopago.js";
+import { criarPreferencia, confirmarPagamento, validarToken, statusServidor } from "./server/mercadopago.js";
 import { paymentCheck, webhookInfinitepay } from "./server/infinitepay.js";
 import { emailsPedido } from "./server/emails.js";
 
@@ -21,6 +21,10 @@ export default {
       if (rota === "/api/health") return Response.json({ status: "ok" });
       if (rota === "/api/mercadopago/create-preference" && request.method === "POST")
         return await criarPreferencia(request, env);
+      if (rota === "/api/mercadopago/validar-token" && request.method === "POST")
+        return await validarToken(request, env);
+      if (rota === "/api/mercadopago/status-servidor" && request.method === "GET")
+        return await statusServidor(request, env);
       if (rota === "/api/mercadopago/confirmar-pagamento" && request.method === "POST")
         return await confirmarPagamento(request, env);
       if (rota === "/api/infinitepay/payment-check" && request.method === "POST")
