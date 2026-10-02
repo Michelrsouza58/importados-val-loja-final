@@ -1,9 +1,17 @@
 // src/pages/admin/AbaPagamentos.jsx
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { db } from "../../lib/firebase";
 import { ref, set } from "firebase/database";
 import { toast } from "sonner";
-import { FiSave, FiInfo, FiLink2 } from "react-icons/fi";
+import { FiSave, FiInfo, FiLink2, FiCheckCircle, FiAlertTriangle, FiXCircle } from "react-icons/fi";
+import apiBase from "../../lib/apiBase";
+
+const ROTULO_FONTE = {
+  "variavel-de-ambiente": "variável MP_ACCESS_TOKEN",
+  "chave-de-servico": "chave de serviço (FIREBASE_SERVICE_ACCOUNT)",
+  "usuario-de-sistema": "usuário de sistema (FIREBASE_SYSTEM_EMAIL/PASS)",
+  "leitura-anonima": "leitura anônima",
+};
 
 const FORM_VAZIO = () => ({
   infinitepayHandle: "",
@@ -22,6 +30,36 @@ export default function AbaPagamentos({ config }) {
     mercadoPagoPublicKey: config.pagamentos.mercadoPagoPublicKey || "",
   });
   const [salvando, setSalvando] = useState(false);
+  const [testeToken, setTesteToken] = useState(null);
+  const [testando, setTestando] = useState(false);
+  const [statusServidor, setStatusServidor] = useState(null);
+
+  // Diagnóstico: o servidor consegue ler o token do Mercado Pago salvo aqui no Firebase?
+  useEffect(() => {
+    let ativo = true;
+    fetch(`${apiBase}/api/mercadopago/status-servidor`)
+      .then((r) => r.json())
+      .then((d) => { if (ativo) setStatusServidor(d || { encontrado: false }); })
+      .catch(() => { if (ativo) setStatusServidor({ encontrado: false, erro: true }); });
+    return () => { ativo = false; };
+  }, []);
+
+  const testarToken = async () => {
+    setTestando(true);
+    setTesteToken(null);
+    try {
+      const resposta = await fetch(`${apiBase}/api/mercadopago/validar-token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accessToken: form.mercadoPagoAccessToken }),
+      });
+      const dados = await resposta.json();
+      setTesteToken(dados || { valida: false, erro: "Resposta vazia do servidor." });
+    } catch (e) {
+      setTesteToken({ valida: false, erro: "Falha de conexão. Tente novamente." });
+    }
+    setTestando(false);
+  };
 
   const set = (campo, valor) => setForm((f) => ({ ...f, [campo]: valor }));
 
@@ -110,7 +148,7 @@ export default function AbaPagamentos({ config }) {
           <div className="bg-creme/50 border border-pessego/20 rounded-2xl p-5 space-y-4">
             <h3 className="text-[10px] font-bold uppercase tracking-widest text-espresso/60">Mercado Pago — Cartão</h3>
             <div className="space-y-1.5">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-espresso/50">Access Token (produção ou teste)</label>
+              <label className="text-[10px] font-bold uppercase tracking-wider text-espresso/50">Access Token (o único campo necessário)</label>
               <input
                 type="password"
                 value={form.mercadoPagoAccessToken}
@@ -130,11 +168,68 @@ export default function AbaPagamentos({ config }) {
                 data-testid="admin-pagamentos-mp-publickey"
               />
             </div>
-            <div className="flex items-start gap-2 bg-amber-50 border border-amber-100 rounded-xl p-3">
-              <FiInfo className="text-amber-700 shrink-0 mt-0.5" size={13} />
-              <p className="text-[10px] text-amber-800 leading-relaxed">
-                Obtenha em developers.mercadopago.com > Sua aplicação > Credenciais. No Cloudflare, a função lê este
-                token daqui (via chave de serviço) — ou configure a variável MP_ACCESS_TOKEN.
+            <button
+              onClick={testarToken}
+              disabled={testando || !form.mercadoPagoAccessToken.trim()}
+              className="w-full flex items-center justify-center gap-2 bg-espresso hover:bg-ink disabled:bg-espresso/20 disabled:cursor-not-allowed text-creme py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all"
+              data-testid="admin-pagamentos-mp-testar"
+            >
+              {testando ? "Testando..." : "Testar credenciais"}
+            </button>
+            {testeToken && (
+              <div
+                data-testid="admin-pagamentos-mp-resultado-teste"
+                className={`flex items-start gap-2 rounded-xl p-3 border ${
+                  testeToken.valida && testeToken.tipo === "producao"
+                    ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+                    : testeToken.valida
+                    ? "bg-amber-50 border-amber-200 text-amber-800"
+                    : "bg-rose-50 border-rose-200 text-rose-800"
+                }`}
+              >
+                {testeToken.valida && testeToken.tipo === "producao" && <FiCheckCircle className="shrink-0 mt-0.5" size={13} />}
+                {testeToken.valida && testeToken.tipo === "teste" && <FiAlertTriangle className="shrink-0 mt-0.5" size={13} />}
+                {!testeToken.valida && <FiXCircle className="shrink-0 mt-0.5" size={13} />}
+                <p className="text-[10px] leading-relaxed">
+                  {testeToken.valida && testeToken.tipo === "producao" &&
+                    `Token de PRODUÇÃO válido — conta ${testeToken.conta}. Pronto para vender de verdade.`}
+                  {testeToken.valida && testeToken.tipo === "teste" &&
+                    `Token de TESTE válido (${testeToken.conta}) — só aceita usuários e cartões de teste do Mercado Pago. Para vender de verdade, troque pelo token de produção (APP_USR-...) em developers.mercadopago.com › Credenciais › aba Produção.`}
+                  {!testeToken.valida && testeToken.erro}
+                </p>
+              </div>
+            )}
+            <div
+              data-testid="admin-pagamentos-mp-status-servidor"
+              className={`flex items-start gap-2 rounded-xl p-3 border ${
+                statusServidor && statusServidor.encontrado
+                  ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+                  : "bg-amber-50 border-amber-200 text-amber-800"
+              }`}
+            >
+              {statusServidor && statusServidor.encontrado ? (
+                <FiCheckCircle className="shrink-0 mt-0.5" size={13} />
+              ) : (
+                <FiAlertTriangle className="shrink-0 mt-0.5" size={13} />
+              )}
+              <p className="text-[10px] leading-relaxed">
+                {statusServidor === null
+                  ? "Verificando se o servidor consegue ler o token salvo..."
+                  : statusServidor.encontrado
+                  ? `O servidor consegue ler o token salvo (fonte: ${ROTULO_FONTE[statusServidor.fonte] || statusServidor.fonte}). O pagamento com cartão pode funcionar.`
+                  : statusServidor.erro
+                  ? "Não foi possível consultar o servidor agora."
+                  : "O servidor NÃO consegue ler o token salvo aqui — por isso o cartão falha mesmo com o token preenchido. No Cloudflare › Settings › Variables and Secrets, cadastre FIREBASE_SERVICE_ACCOUNT (JSON da chave de serviço) OU FIREBASE_SYSTEM_EMAIL + FIREBASE_SYSTEM_PASS (o mesmo usuário de sistema do fluxo ActivePieces) e publique de novo. Veja o passo a passo no README-DEPLOY, seção 5."}
+              </p>
+            </div>
+            <div className="flex items-start gap-2 bg-gold/10 border border-gold/30 rounded-xl p-3">
+              <FiInfo className="text-gold shrink-0 mt-0.5" size={13} />
+              <p className="text-[10px] text-espresso/70 leading-relaxed">
+                No checkout com cartão só o <strong>Access Token</strong> é usado — a Public Key fica opcional aqui.
+                O token pode ser de <strong>qualquer conta</strong> (mesmo de outra pessoa): o dinheiro cai na conta
+                dona do token. Use o de <strong>produção (APP_USR-...)</strong> para vender de verdade; o de teste
+                (TEST-...) só aceita cartões de teste. Obtenha em developers.mercadopago.com › Sua aplicação ›
+                Credenciais.
               </p>
             </div>
           </div>
