@@ -12,9 +12,17 @@ Cliente paga o Pix
 
 ## Montando o fluxo (5 minutos)
 
-1. **Trigger — Webhook**: já criado (a URL acima é o seu trigger). No app da
-   InfinitePay, cadastre essa URL como webhook (mesmo lugar onde você configurou
-   o checkout).
+1. **Trigger — Webhook**: já criado (a URL acima é o seu trigger). Cole essa URL
+   em **Admin › Pagamentos › Webhook de pagamento (InfinitePay → ActivePieces)** e
+   salve. **Não existe cadastro de webhook no app da InfinitePay**: a InfinitePay só
+   chama a URL que vem no campo `webhook_url` de cada checkout criado — e o site
+   agora envia essa URL automaticamente em todo checkout Pix. Checkouts gerados
+   *antes* de salvar a URL não disparam o webhook.
+   Use a URL de produção (`.../webhooks/ID`, sem `/test`) e deixe o fluxo
+   **publicado/ligado** no ActivePieces.
+
+   O corpo que a InfinitePay envia quando o pagamento é aprovado:
+   `{"invoice_slug","amount","paid_amount","installments","capture_method","transaction_nsu","order_nsu","receipt_url","items"}`
 
 2. **Passo — Code by ActivePieces**: cole o conteúdo de `activepieces-code.js`.
    No campo de inputs, adicione um input chamado `body` e mapeie com o payload
@@ -55,3 +63,10 @@ Cliente paga o Pix
   periódica como plano B.
 - Se um pedido não virar "Pago", olhe o histórico da execução no ActivePieces —
   o código devolve `{ ok, motivo }` apontando o que faltou.
+
+## Checkout somente Pix
+
+A API da InfinitePay **não aceita** escolher a forma de pagamento por pedido — o
+checkout mostra o que está ligado na sua conta. No **App InfinitePay › Vendas ›
+Checkout › Configurações › Meios de Pagamento**, desative **Cartão de crédito** e
+deixe só o Pix (vale na hora, inclusive para links já gerados).

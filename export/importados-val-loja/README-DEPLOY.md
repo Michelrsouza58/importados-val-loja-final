@@ -46,8 +46,8 @@ npx wrangler pages secret put FIREBASE_SERVICE_ACCOUNT --project-name=importados
 
 E enquanto o secret não estiver no ar, a loja continua vendendo sem travar:
 - **Pix** segue direto pela InfinitePay (confirmação ao retornar + webhook quando ativar);
-- **Cartão** cai automaticamente para o checkout da InfinitePay (que também aceita
-  cartão) até o token do Mercado Pago ficar disponível.
+- **Cartão** só funciona pelo Mercado Pago. Sem token do Mercado Pago, o site avisa
+  a cliente para pagar com Pix (a InfinitePay da loja é somente Pix).
 
 **Importante**: adicione o domínio do Worker (ex:
 `importados-val-loja-final.sua-conta.workers.dev`) em Firebase Console >
@@ -94,6 +94,10 @@ Firebase Authentication.
 O site cria o link de checkout e o cliente paga no app do banco. Se quiser usar
 seu fluxo do n8n, cole a URL do webhook no campo indicado.
 
+**Somente Pix:** a API da InfinitePay não permite escolher a forma de pagamento
+por pedido — o checkout exibe o que está ligado na conta. No App InfinitePay ›
+Vendas › Checkout › Configurações › Meios de Pagamento, desative Cartão de crédito.
+
 **Cartão — Mercado Pago (Checkout Pro):** o cliente é levado ao checkout
 seguro do Mercado Pago. O token vem da aba Pagamentos do painel admin —
 você só precisa cadastrar **um único secret** no Cloudflare:
@@ -132,8 +136,11 @@ no repositório (nada de worker separado):
      (mesmo secret da seção do Mercado Pago — só ele é obrigatório).
    - `INFINITEPAY_HANDLE` (opcional): sua @handle — se não existir, o webhook
      aceita a handle que a própria InfinitePay envia no corpo.
-2. No app da InfinitePay, cadastre a URL do webhook:
+2. Cole a URL abaixo em **Admin › Pagamentos › Webhook de pagamento** (no lugar da
+   URL do ActivePieces, se quiser usar esta função em vez do ActivePieces):
    `https://importados-val-loja-final.SUA-CONTA.workers.dev/api/webhooks/infinitepay`
+   A InfinitePay não tem cadastro de webhook no app: o site envia essa URL no
+   campo `webhook_url` de cada checkout criado.
 3. Pronto: o webhook confere o pagamento, acha o pedido certo (pronta entrega
    ou encomenda) e grava `Status: "Pago"`.
 

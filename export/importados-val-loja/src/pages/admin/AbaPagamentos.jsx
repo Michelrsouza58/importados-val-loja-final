@@ -78,8 +78,17 @@ export default function AbaPagamentos({ config }) {
                 data-testid="admin-pagamentos-infinitepay-webhook-url"
               />
               <p className="text-[10px] text-espresso/40">
-                A URL que a InfinitePay avisa quando o pagamento cai (seu fluxo do ActivePieces). Fica salva aqui no
-                banco — e lembre de cadastrá-la também no app da InfinitePay.
+                A URL que a InfinitePay avisa quando o pagamento cai (seu fluxo do ActivePieces). O site envia esta URL
+                automaticamente em cada checkout criado (campo webhook_url) — não precisa cadastrar em outro lugar.
+                Vale para os checkouts gerados depois de salvar.
+              </p>
+            </div>
+            <div className="flex gap-2 bg-gold/10 border border-gold/30 rounded-xl p-3" data-testid="admin-pagamentos-aviso-pix">
+              <FiInfo className="text-gold shrink-0 mt-0.5" size={13} />
+              <p className="text-[10px] text-espresso/70 leading-relaxed">
+                <strong>Somente Pix:</strong> as formas de pagamento do checkout são definidas na sua conta InfinitePay
+                (a API não permite escolher por pedido). No App InfinitePay: <strong>Vendas › Checkout › Configurações ›
+                Meios de Pagamento</strong> → desative <strong>Cartão de crédito</strong> e deixe só o Pix.
               </p>
             </div>
             <div className="space-y-1.5">
